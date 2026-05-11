@@ -82,13 +82,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let urls = TabSession.loadURLs()
         if urls.isEmpty {
             if NSDocumentController.shared.documents.isEmpty {
-                NSDocumentController.shared.openDocument(nil)
+                TabHostWindowController.shared.showHome(nil)
             }
             return
         }
         for url in urls {
             NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            TabHostWindowController.shared.showHome(nil)
+        }
+        return true
     }
 
     // 방향키로 펼침면 이동 (textField/textView에 포커스가 있으면 그쪽 우선).

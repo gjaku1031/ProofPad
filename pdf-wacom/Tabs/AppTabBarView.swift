@@ -7,8 +7,13 @@ final class AppTabBarView: NSView {
     weak var host: TabHostWindowController?
 
     private var chips: [TabChipView] = []
+    private let homeButton = TabHomeButton()
+    private let scrollView = NSScrollView()
+    private let chipContainerView = NSView()
 
     private let horizontalMargin: CGFloat = 12
+    private let homeButtonWidth: CGFloat = 34
+    private let homeSpacing: CGFloat = 8
     private let chipSpacing: CGFloat = 4
     private let maxChipWidth: CGFloat = 220
     private let minChipWidth: CGFloat = 90
@@ -17,6 +22,20 @@ final class AppTabBarView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+
+        homeButton.onClick = { [weak self] in
+            self?.host?.showHome(nil)
+        }
+        addSubview(homeButton)
+
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.documentView = chipContainerView
+        addSubview(scrollView)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -36,6 +55,7 @@ final class AppTabBarView: NSView {
     func reload() {
         guard let host = host else { return }
         chips.forEach { $0.removeFromSuperview() }
+        homeButton.isHomeActive = host.activeDocument == nil
         chips = host.documents.map { doc in
             let chip = TabChipView(document: doc, isActive: doc === host.activeDocument)
             chip.onSelect = { [weak host] in host?.activate(document: doc) }
@@ -50,7 +70,7 @@ final class AppTabBarView: NSView {
             chip.onDrop = { [weak self] document, windowPoint in
                 self?.drop(document: document, at: windowPoint)
             }
-            addSubview(chip)
+            chipContainerView.addSubview(chip)
             return chip
         }
         needsLayout = true
@@ -58,15 +78,24 @@ final class AppTabBarView: NSView {
 
     override func layout() {
         super.layout()
+        let chipAreaX = horizontalMargin + homeButtonWidth + homeSpacing
+        let chipAreaWidth = max(0, bounds.width - chipAreaX - horizontalMargin)
+        let barHeight = bounds.height - 4
+        homeButton.frame = NSRect(x: horizontalMargin, y: 2, width: homeButtonWidth, height: barHeight)
+        scrollView.frame = NSRect(x: chipAreaX, y: 2, width: chipAreaWidth, height: barHeight)
+
         let n = chips.count
         guard n > 0 else { return }
-        let availWidth = bounds.width - horizontalMargin * 2
+        let availWidth = chipAreaWidth
         let totalSpacing = chipSpacing * CGFloat(max(n - 1, 0))
         var chipWidth = (availWidth - totalSpacing) / CGFloat(n)
         chipWidth = min(chipWidth, maxChipWidth)
         chipWidth = max(chipWidth, minChipWidth)
-        let chipHeight = bounds.height - 4
-        var x: CGFloat = horizontalMargin
+        let contentWidth = max(availWidth, chipWidth * CGFloat(n) + totalSpacing)
+        let chipHeight = scrollView.contentView.bounds.height
+        chipContainerView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: chipHeight)
+
+        var x: CGFloat = 0
         for chip in chips {
             chip.frame = NSRect(x: x, y: 2, width: chipWidth, height: chipHeight)
             x += chipWidth + chipSpacing
@@ -75,10 +104,50 @@ final class AppTabBarView: NSView {
 
     private func drop(document: PDFInkDocument, at windowPoint: NSPoint) {
         let local = convert(windowPoint, from: nil)
+        let chipLocal = chipContainerView.convert(local, from: self)
         let insertionIndex = chips.firstIndex { chip in
-            local.x < chip.frame.midX
+            chipLocal.x < chip.frame.midX
         } ?? chips.count
         host?.moveTab(document: document, to: insertionIndex)
+    }
+}
+
+final class TabHomeButton: NSButton {
+    var onClick: (() -> Void)?
+    var isHomeActive = false {
+        didSet { updateBackground() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 7
+        isBordered = false
+        bezelStyle = .accessoryBarAction
+        image = NSImage(systemSymbolName: "house", accessibilityDescription: "Home")
+        imageScaling = .scaleProportionallyDown
+        contentTintColor = .secondaryLabelColor
+        toolTip = "Home"
+        target = self
+        action = #selector(clicked)
+        updateBackground()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    @objc private func clicked() {
+        onClick?()
+    }
+
+    private func updateBackground() {
+        if isHomeActive {
+            layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72).cgColor
+            contentTintColor = .labelColor
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            contentTintColor = .secondaryLabelColor
+        }
     }
 }
 

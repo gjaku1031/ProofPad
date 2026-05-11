@@ -78,6 +78,28 @@ final class PDFInkDocumentTests: XCTestCase {
         XCTAssertEqual(document.strokesIfExists(forPage: 1)?.strokes.map(\.id), [stroke.id])
     }
 
+    func testDuplicatePageInsertsCopiedPageAndEditableStrokesAfterSource() throws {
+        let document = PDFInkDocument()
+        try document.read(from: makePDFData(pageCount: 3), ofType: "com.adobe.pdf")
+        let sourceStroke = makeStroke()
+        let shiftedStroke = Stroke(id: UUID(uuidString: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")!,
+                                   color: .systemBlue,
+                                   width: 4,
+                                   createdAt: Date(timeIntervalSince1970: 8910))
+        shiftedStroke.append(StrokePoint(x: 20, y: 30, t: 0))
+        document.strokes(forPage: 1).add(sourceStroke, notify: false)
+        document.strokes(forPage: 2).add(shiftedStroke, notify: false)
+
+        try document.duplicatePage(at: 1)
+
+        XCTAssertEqual(document.pdfDocument?.pageCount, 4)
+        let duplicatedStrokes = try XCTUnwrap(document.strokesIfExists(forPage: 2)?.strokes)
+        XCTAssertEqual(duplicatedStrokes.count, 1)
+        XCTAssertNotEqual(duplicatedStrokes[0].id, sourceStroke.id)
+        XCTAssertEqual(duplicatedStrokes[0].points, sourceStroke.points)
+        XCTAssertEqual(document.strokesIfExists(forPage: 3)?.strokes.map(\.id), [shiftedStroke.id])
+    }
+
     func testSinglePagePDFDataIncludesEditableInk() throws {
         let document = PDFInkDocument()
         try document.read(from: makePDFData(pageCount: 1), ofType: "com.adobe.pdf")

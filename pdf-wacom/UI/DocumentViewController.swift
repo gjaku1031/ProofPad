@@ -147,6 +147,14 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
         stripView.scroll(toPageIndex: index)
     }
 
+    func sidebar(_ vc: SidebarViewController, didRequestDuplicatePageAt index: Int) {
+        duplicatePage(at: index)
+    }
+
+    func sidebar(_ vc: SidebarViewController, didRequestDeletePageAt index: Int) {
+        deletePage(at: index, confirm: true)
+    }
+
     // MARK: - Page Jump (⌘G)
 
     @objc func goToPage(_ sender: Any?) {
@@ -273,22 +281,43 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
     }
 
     @objc func deleteCurrentPage(_ sender: Any?) {
+        deletePage(at: currentPageIndex(), confirm: true)
+    }
+
+    private func duplicatePage(at pageIndex: Int) {
+        guard let doc = document else { return }
+        do {
+            try doc.duplicatePage(at: pageIndex)
+            reloadAfterPDFEdit(selectingPage: pageIndex + 1)
+        } catch {
+            showError(error)
+        }
+    }
+
+    private func deletePage(at pageIndex: Int, confirm: Bool) {
         guard let doc = document, let window = view.window else { return }
-        let pageIndex = currentPageIndex()
-        let alert = NSAlert()
-        alert.messageText = "\(pageIndex + 1)페이지를 삭제할까요?"
-        alert.informativeText = "이 작업은 실행 취소로 되돌릴 수 없습니다. 저장 전에는 파일에 반영되지 않습니다."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [weak self, weak doc] response in
-            guard response == .alertFirstButtonReturn, let doc else { return }
+        let performDelete = { [weak self, weak doc] in
+            guard let doc else { return }
             do {
                 try doc.deletePage(at: pageIndex)
                 self?.reloadAfterPDFEdit(selectingPage: min(pageIndex, max(doc.pageCount - 1, 0)))
             } catch {
                 self?.showError(error)
             }
+        }
+        guard confirm else {
+            performDelete()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "\(pageIndex + 1)페이지를 삭제할까요?"
+        alert.informativeText = "이 작업은 실행 취소로 되돌릴 수 없습니다. 저장 전에는 파일에 반영되지 않습니다."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            performDelete()
         }
     }
 

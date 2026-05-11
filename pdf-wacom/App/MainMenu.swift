@@ -47,6 +47,7 @@ enum MainMenuBuilder {
                                 keyEquivalent: "t")
         newTab.keyEquivalentModifierMask = [.command]
         menu.addItem(newTab)
+        menu.addItem(makeNewBlankPDFSubmenu())
 
         // ⌘O: 표준 NSDocumentController open
         menu.addItem(withTitle: "Open…",
@@ -80,6 +81,25 @@ enum MainMenuBuilder {
                                 keyEquivalent: "E")
         export.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(export)
+        item.submenu = menu
+        return item
+    }
+
+    private static func makeNewBlankPDFSubmenu() -> NSMenuItem {
+        let item = NSMenuItem(title: "New Blank PDF", action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: "New Blank PDF")
+        menu.addItem(NSMenuItem(title: "Blank A4",
+                                action: Selector(("newBlankPDF:")),
+                                keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Dot Grid A4",
+                                action: Selector(("newDotGridPDF:")),
+                                keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Lined A4",
+                                action: Selector(("newLinedPDF:")),
+                                keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Math Note A4",
+                                action: Selector(("newMathNotePDF:")),
+                                keyEquivalent: ""))
         item.submenu = menu
         return item
     }

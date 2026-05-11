@@ -20,6 +20,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     private var viewControllersByDocID: [ObjectIdentifier: DocumentViewController] = [:]
 
     private var hostContentVC: HostContentViewController!
+    private lazy var homeViewController: HomeViewController = makeHomeViewController()
     private let tabBarView = AppTabBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 40))
     private var documentEditStateObserver: NSObjectProtocol?
     private var containerView: NSView { hostContentVC.containerView }
@@ -93,6 +94,26 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         }
     }
 
+    private func makeHomeViewController() -> HomeViewController {
+        let vc = HomeViewController()
+        vc.onOpenDocument = {
+            NSDocumentController.shared.openDocument(nil)
+        }
+        vc.onCreateBlankPDF = { [weak self] template in
+            self?.createBlankDocument(template: template)
+        }
+        vc.onMergePDFs = { [weak self] in
+            self?.mergePDFsFromHome()
+        }
+        vc.onImagesToPDF = { [weak self] in
+            self?.imagesToPDFFromHome()
+        }
+        vc.onOpenRecent = { [weak self] url in
+            self?.openRecentDocument(url)
+        }
+        return vc
+    }
+
     private func documentEditStateDidChange(_ note: Notification) {
         guard let document = note.object as? PDFInkDocument else { return }
         guard documents.contains(where: { $0 === document }) else { return }
@@ -125,6 +146,16 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     @IBAction func exportPagesAsImages(_ sender: Any?) { activeViewController?.exportPagesAsImages(sender) }
     @IBAction func toggleDocumentSidebar(_ sender: Any?) {
         activeViewController?.toggleDocumentSidebar(sender)
+    }
+
+    @IBAction func showHome(_ sender: Any?) {
+        activeDocument = nil
+        self.document = nil
+        hostContentVC.setActive(homeViewController)
+        homeViewController.reloadRecentFiles()
+        window?.title = "pdf-wacom"
+        showWindowIfNeeded()
+        tabBarView.reload()
     }
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -206,17 +237,11 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
             if documents.indices.contains(nextIdx) {
                 activate(document: documents[nextIdx])
             } else {
-                activeDocument = nil
-                self.document = nil
-                hostContentVC.setActive(nil)
-                window?.title = "pdf-wacom"
+                showHome(nil)
             }
         }
         tabBarView.reload()
         TabSession.save(documents: documents)
-        if documents.isEmpty {
-            window?.orderOut(nil)
-        }
     }
 
     func moveTab(document: PDFInkDocument, to insertionIndex: Int) {
@@ -245,6 +270,76 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     @IBAction func newDocumentTab(_ sender: Any?) {
         // ⌘T → Open dialog로 PDF 선택 → 새 탭으로 추가
         NSDocumentController.shared.openDocument(nil)
+    }
+
+    @IBAction func newBlankPDF(_ sender: Any?) { createBlankDocument(template: .blank) }
+    @IBAction func newDotGridPDF(_ sender: Any?) { createBlankDocument(template: .dotGrid) }
+    @IBAction func newLinedPDF(_ sender: Any?) { createBlankDocument(template: .lined) }
+    @IBAction func newMathNotePDF(_ sender: Any?) { createBlankDocument(template: .mathNote) }
+
+    func createBlankDocument(template: BlankPDFTemplate) {
+        do {
+            let document = PDFInkDocument()
+            try document.configureBlankPDF(template: template)
+            addGeneratedDocument(document)
+        } catch {
+            presentError(error)
+        }
+    }
+
+    private func mergePDFsFromHome() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.prompt = "Merge"
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK else { return }
+            do {
+                let document = PDFInkDocument()
+                let pdf = try PDFDocumentAssembler.mergePDFs(at: panel.urls)
+                try document.configureGeneratedPDF(pdf, displayName: "Untitled Merged PDF")
+                self?.addGeneratedDocument(document)
+            } catch {
+                self?.presentError(error)
+            }
+        }
+    }
+
+    private func imagesToPDFFromHome() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.prompt = "Create"
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK else { return }
+            do {
+                let document = PDFInkDocument()
+                let pdf = try PDFDocumentAssembler.imagesAsPDF(at: panel.urls)
+                try document.configureGeneratedPDF(pdf, displayName: "Untitled Images PDF")
+                self?.addGeneratedDocument(document)
+            } catch {
+                self?.presentError(error)
+            }
+        }
+    }
+
+    private func addGeneratedDocument(_ document: PDFInkDocument) {
+        NSDocumentController.shared.addDocument(document)
+        document.makeWindowControllers()
+        document.updateChangeCount(.changeDone)
+        tabBarView.reload()
+    }
+
+    private func openRecentDocument(_ url: URL) {
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { [weak self] _, _, error in
+            if let error {
+                self?.presentError(error)
+            }
+        }
     }
 
     @IBAction func closeActiveTab(_ sender: Any?) {

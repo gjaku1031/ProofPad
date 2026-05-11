@@ -5,6 +5,8 @@ protocol SidebarViewControllerDelegate: AnyObject {
     func sidebar(_ vc: SidebarViewController, didChangeCoverIsSinglePage value: Bool)
     func sidebar(_ vc: SidebarViewController, didChangePagesPerSpread value: Int)
     func sidebar(_ vc: SidebarViewController, didSelectPageIndex index: Int)
+    func sidebar(_ vc: SidebarViewController, didRequestDuplicatePageAt index: Int)
+    func sidebar(_ vc: SidebarViewController, didRequestDeletePageAt index: Int)
 }
 
 final class SidebarViewController: NSViewController {
@@ -87,7 +89,7 @@ final class SidebarViewController: NSViewController {
         layout.minimumLineSpacing = 10
         layout.sectionInset = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
 
-        let cv = NSCollectionView()
+        let cv = PageCollectionView()
         cv.collectionViewLayout = layout
         cv.dataSource = self
         cv.delegate = self
@@ -96,6 +98,9 @@ final class SidebarViewController: NSViewController {
         cv.backgroundColors = [.clear]
         cv.register(ThumbnailCollectionViewItem.self,
                     forItemWithIdentifier: Self.thumbItemID)
+        cv.menuProvider = { [weak self] pageIndex in
+            self?.makePageContextMenu(pageIndex: pageIndex)
+        }
 
         scroll.documentView = cv
         v.addSubview(scroll)
@@ -149,6 +154,37 @@ final class SidebarViewController: NSViewController {
         coverCheckbox.isEnabled = pages != 1
         delegate?.sidebar(self, didChangePagesPerSpread: pages)
     }
+
+    private func makePageContextMenu(pageIndex: Int) -> NSMenu {
+        let menu = NSMenu(title: "Page")
+
+        let duplicate = NSMenuItem(title: "Duplicate Page",
+                                   action: #selector(duplicatePageFromMenu(_:)),
+                                   keyEquivalent: "")
+        duplicate.target = self
+        duplicate.representedObject = pageIndex
+        menu.addItem(duplicate)
+
+        let delete = NSMenuItem(title: "Delete Page",
+                                action: #selector(deletePageFromMenu(_:)),
+                                keyEquivalent: "")
+        delete.target = self
+        delete.representedObject = pageIndex
+        delete.isEnabled = (document?.pageCount ?? 0) > 1
+        menu.addItem(delete)
+
+        return menu
+    }
+
+    @objc private func duplicatePageFromMenu(_ sender: NSMenuItem) {
+        guard let pageIndex = sender.representedObject as? Int else { return }
+        delegate?.sidebar(self, didRequestDuplicatePageAt: pageIndex)
+    }
+
+    @objc private func deletePageFromMenu(_ sender: NSMenuItem) {
+        guard let pageIndex = sender.representedObject as? Int else { return }
+        delegate?.sidebar(self, didRequestDeletePageAt: pageIndex)
+    }
 }
 
 extension SidebarViewController: NSCollectionViewDataSource {
@@ -172,6 +208,17 @@ extension SidebarViewController: NSCollectionViewDelegate {
                         didSelectItemsAt indexPaths: Set<IndexPath>) {
         guard let ip = indexPaths.first else { return }
         delegate?.sidebar(self, didSelectPageIndex: ip.item)
+    }
+}
+
+final class PageCollectionView: NSCollectionView {
+    var menuProvider: ((Int) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let localPoint = convert(event.locationInWindow, from: nil)
+        guard let indexPath = indexPathForItem(at: localPoint) else { return nil }
+        selectionIndexPaths = [indexPath]
+        return menuProvider?(indexPath.item)
     }
 }
 

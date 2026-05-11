@@ -23,6 +23,7 @@ final class PDFInkDocument: NSDocument {
 
     /// 페이지 인덱스 -> 앱에서 편집 가능한 ink strokes.
     private var pageStrokesMap: [Int: PageStrokes] = [:]
+    private var untitledDisplayName: String?
 
     /// PDF 자체에 저장하지 않는 view preference. 기본은 시험지 채점에 맞춘 두 페이지 보기.
     private(set) var coverIsSinglePage: Bool = false
@@ -76,6 +77,20 @@ final class PDFInkDocument: NSDocument {
         pdfDocument?.pageCount ?? 0
     }
 
+    func configureBlankPDF(template: BlankPDFTemplate, pageCount: Int = 1) throws {
+        try configureGeneratedPDF(BlankPDFTemplateFactory.makePDFDocument(template: template, pageCount: pageCount),
+                                  displayName: template.displayName)
+    }
+
+    func configureGeneratedPDF(_ pdf: PDFDocument, displayName: String) throws {
+        guard pdf.pageCount > 0 else { throw Self.writeError("빈 PDF는 만들 수 없습니다.") }
+        pageStrokesMap = [:]
+        pdfDocument = pdf
+        fileURL = nil
+        fileType = "com.adobe.pdf"
+        untitledDisplayName = displayName
+    }
+
     func setCoverIsSinglePage(_ value: Bool) {
         guard coverIsSinglePage != value else { return }
         coverIsSinglePage = value
@@ -124,6 +139,21 @@ final class PDFInkDocument: NSDocument {
         updateChangeCount(.changeDone)
     }
 
+    func duplicatePage(at pageIndex: Int) throws {
+        guard let pdf = pdfDocument else { throw Self.writeError("편집할 PDF가 없습니다.") }
+        guard pageIndex >= 0, pageIndex < pdf.pageCount else {
+            throw Self.writeError("복제할 페이지가 없습니다.")
+        }
+        guard let copiedPage = pdf.page(at: pageIndex)?.copy() as? PDFPage else {
+            throw Self.writeError("페이지를 복제할 수 없습니다.")
+        }
+
+        let insertionIndex = pageIndex + 1
+        pdf.insert(copiedPage, at: insertionIndex)
+        pageStrokesMap = Self.reindexStrokesAfterInsertingPage(after: pageIndex, pageStrokesMap)
+        updateChangeCount(.changeDone)
+    }
+
     func singlePagePDFData(pageIndex: Int) throws -> Data {
         guard let pdf = pdfDocument else { throw Self.writeError("내보낼 PDF가 없습니다.") }
         guard let page = pdf.page(at: pageIndex)?.copy() as? PDFPage else {
@@ -162,6 +192,9 @@ final class PDFInkDocument: NSDocument {
             if let url = fileURL {
                 return (url.lastPathComponent as NSString).deletingPathExtension
             }
+            if let untitledDisplayName {
+                return untitledDisplayName
+            }
             return super.displayName ?? "Untitled"
         }
         set { /* derived */ }
@@ -179,6 +212,7 @@ final class PDFInkDocument: NSDocument {
 
         self.pdfDocument = pdf
         self.pageStrokesMap = Self.extractEditableInk(from: pdf)
+        self.untitledDisplayName = nil
     }
 
     override func data(ofType typeName: String) throws -> Data {
@@ -229,6 +263,31 @@ final class PDFInkDocument: NSDocument {
                 result[pageIndex - 1] = shifted
             }
         }
+        return result
+    }
+
+    private static func reindexStrokesAfterInsertingPage(after sourceIndex: Int,
+                                                         _ old: [Int: PageStrokes]) -> [Int: PageStrokes] {
+        var result: [Int: PageStrokes] = [:]
+        let insertionIndex = sourceIndex + 1
+
+        for (pageIndex, pageStrokes) in old {
+            let newIndex = pageIndex >= insertionIndex ? pageIndex + 1 : pageIndex
+            let shifted = PageStrokes(pageIndex: newIndex)
+            for stroke in pageStrokes.strokes {
+                shifted.add(stroke, notify: false)
+            }
+            result[newIndex] = shifted
+        }
+
+        if let sourceStrokes = old[sourceIndex] {
+            let duplicated = PageStrokes(pageIndex: insertionIndex)
+            for stroke in sourceStrokes.strokes {
+                duplicated.add(stroke.duplicated(), notify: false)
+            }
+            result[insertionIndex] = duplicated
+        }
+
         return result
     }
 

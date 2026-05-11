@@ -50,6 +50,15 @@ final class Stroke {
         }
     }
 
+    func duplicated() -> Stroke {
+        let copy = Stroke(color: color,
+                          width: width,
+                          inkFeel: inkFeel,
+                          createdAt: createdAt)
+        copy.replacePoints(points)
+        return copy
+    }
+
     private func expandBBox(for point: StrokePoint) {
         let p = CGPoint(x: CGFloat(point.x), y: CGFloat(point.y))
         let r = max(width * 0.65, 0.5)
