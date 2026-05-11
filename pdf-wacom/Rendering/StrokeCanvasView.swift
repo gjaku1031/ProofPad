@@ -1,7 +1,6 @@
 import Cocoa
 import Metal
 import QuartzCore
-import CoreVideo
 
 // MARK: - StrokeCanvasView (unified Metal)
 //
@@ -34,7 +33,7 @@ import CoreVideo
 //   - undo/redo callback (addStrokeRecordingUndo): 다시 추가
 //   - layout (bounds size 변경): viewport 변환 결과가 달라짐
 //   - viewDidChangeBackingProperties: scale 변경, MSAA texture도 재생성
-final class StrokeCanvasView: NSView {
+final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
 
     let pageStrokes: PageStrokes
     let pageBounds: CGRect            // PDF page mediaBox
@@ -47,20 +46,19 @@ final class StrokeCanvasView: NSView {
     private var activeTool: Tool?
     private var lastLaidOutSize: CGSize = .zero
 
-    // MARK: - Frame pacing (CVDisplayLink)
+    // MARK: - Frame pacing
     //
     // mouseDragged는 Wacom 펜에서 125Hz, 마우스 coalesced에서도 60Hz+로 들어온다.
-    // 매 mouseDragged마다 present()를 부르면 WindowServer / 합성기가 그 frequency로 commit을 받게 되어
-    // 백프레셔 → cursor display lag, gpuDone 사이 44ms 갭 같은 증상이 발생한다 (이전 profiling으로 확인).
+    // 매 mouseDragged마다 present()를 부르면 WindowServer / 합성기 backpressure 발생.
     //
-    // 해결: present를 디스플레이 refresh rate (60Hz)에 맞춰 rate-limit.
+    // 해결: DisplayLinkCoordinator.shared (앱 전체 단일 CVDisplayLink)에 subscribe.
     //   - mouseDragged 핫패스는 setNeedsPresent() 플래그만 set
-    //   - CVDisplayLink가 vsync에 콜백 → main 큐로 dispatch → 플래그 있으면 1회 present
-    //   - mouseDown / commitStroke / erase / undo / layout 등 one-shot 액션은 presentNow() 즉시
+    //   - vsync 콜백 → 코디네이터가 fireAll → 우리 displayLinkFired() 호출 (main thread)
+    //   - presentScheduled 플래그 있으면 1회 present
     //
-    // 동일 패턴이 PencilKit / Procreate / Figma 등 저지연 드로잉 앱의 표준 구조.
-    private var displayLink: CVDisplayLink?
-    /// main thread에서만 read/write. CVDisplayLink 콜백은 DispatchQueue.main.async로 메인에 옴.
+    // 이전엔 페이지마다 자기 CVDisplayLink가 있어 30페이지면 60Hz×30개가 main runloop를 두드렸음.
+    // 지금은 1개 → 페이지 수 무관.
+    /// main thread에서만 read/write.
     private var presentScheduled = false
 
     // MARK: - Cursor state
@@ -145,7 +143,7 @@ final class StrokeCanvasView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     deinit {
-        stopDisplayLink()
+        DisplayLinkCoordinator.shared.unsubscribe(self)
     }
 
     // MARK: - Window attachment lifecycle (display link)
@@ -153,9 +151,9 @@ final class StrokeCanvasView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            startDisplayLink()
+            DisplayLinkCoordinator.shared.subscribe(self)
         } else {
-            stopDisplayLink()
+            DisplayLinkCoordinator.shared.unsubscribe(self)
         }
     }
 
@@ -413,37 +411,9 @@ final class StrokeCanvasView: NSView {
         presentScheduled = true
     }
 
-    private func startDisplayLink() {
-        guard displayLink == nil else { return }
-        var link: CVDisplayLink?
-        let createResult = CVDisplayLinkCreateWithActiveCGDisplays(&link)
-        guard createResult == kCVReturnSuccess, let link else { return }
-
-        let opaque = Unmanaged.passUnretained(self).toOpaque()
-        CVDisplayLinkSetOutputCallback(link, { (_, _, _, _, _, context) -> CVReturn in
-            guard let context else { return kCVReturnSuccess }
-            let view = Unmanaged<StrokeCanvasView>.fromOpaque(context).takeUnretainedValue()
-            // DL 스레드 → main으로 hop. 캡처한 view가 main 블록 실행까지 살아있음을 보장하려고
-            // weak으로 잡는다. stopDisplayLink가 deinit/viewWillMove에서 먼저 stop을 보장하므로
-            // 일반적으로는 view가 살아있지만 race 안전 차원.
-            DispatchQueue.main.async { [weak view] in
-                view?.displayLinkFired()
-            }
-            return kCVReturnSuccess
-        }, opaque)
-        CVDisplayLinkStart(link)
-        self.displayLink = link
-    }
-
-    private func stopDisplayLink() {
-        guard let link = displayLink else { return }
-        // displayLink을 먼저 nil — 재진입/중복 stop 방어. CVDisplayLinkStop은 sync로 in-flight 콜백 완료까지 대기.
-        self.displayLink = nil
-        CVDisplayLinkStop(link)
-    }
-
-    /// Main thread, dispatched from CVDisplayLink callback.
-    private func displayLinkFired() {
+    /// DisplayLinkCoordinator가 vsync에 호출. main thread.
+    /// presentScheduled가 true일 때만 실제 present — 비활성 페이지는 0 cost.
+    func displayLinkFired() {
         guard presentScheduled else { return }
         presentNow()
     }

@@ -32,12 +32,13 @@ import simd
 //   - MSAA texture는 drawableSize 바뀌면 재생성 필수.
 final class MetalStrokeRenderer {
 
-    let device: MTLDevice
-    private let queue: MTLCommandQueue
-    private let pipeline: MTLRenderPipelineState
-    /// PDF 배경을 같은 Metal pass에서 그리는 파이프라인. opaque metalLiveLayer + 합성기 부담 0 핵심.
-    private let pdfPipeline: MTLRenderPipelineState
-    private let pdfSampler: MTLSamplerState
+    /// 공유 device/queue/pipeline. 페이지 수에 비례한 init 비용 회피.
+    private let engine: MetalEngine
+    var device: MTLDevice { engine.device }
+    private var queue: MTLCommandQueue { engine.queue }
+    private var pipeline: MTLRenderPipelineState { engine.strokePipeline }
+    private var pdfPipeline: MTLRenderPipelineState { engine.pdfPipeline }
+    private var pdfSampler: MTLSamplerState { engine.pdfSampler }
     /// 현재 페이지 PDF 비트맵. nil이면 PDF 배경 안 그림 (스트로크만, 투명 배경).
     private var pdfTexture: MTLTexture?
 
@@ -79,8 +80,8 @@ final class MetalStrokeRenderer {
     // MARK: MSAA / pipeline state
 
     /// 4x MSAA — Metal triangle edge가 픽셀에 raw aligned되면 계단(jagged) 보임.
-    /// multisample texture에 그리고 drawable로 resolve.
-    private let sampleCount = 4
+    /// multisample texture에 그리고 drawable로 resolve. sample count는 engine과 동일.
+    private var sampleCount: Int { engine.sampleCount }
     private var multisampleTexture: MTLTexture?
 
     private let capSegments = 12   // round cap fan 분할 수
@@ -134,73 +135,12 @@ final class MetalStrokeRenderer {
 
     // MARK: - Init
 
-    init?(pixelFormat: MTLPixelFormat = .bgra8Unorm) {
-        guard let dev = MTLCreateSystemDefaultDevice() else { return nil }
-        self.device = dev
-        guard let q = dev.makeCommandQueue() else { return nil }
-        self.queue = q
-
-        guard let library = dev.makeDefaultLibrary() else {
-            assertionFailure("Default Metal library not found")
-            return nil
-        }
-        guard let vfn = library.makeFunction(name: "stroke_vertex"),
-              let ffn = library.makeFunction(name: "stroke_fragment"),
-              let pdfV = library.makeFunction(name: "pdf_vertex"),
-              let pdfF = library.makeFunction(name: "pdf_fragment") else {
-            assertionFailure("Stroke shader functions not found")
-            return nil
-        }
-
-        let desc = MTLRenderPipelineDescriptor()
-        desc.vertexFunction = vfn
-        desc.fragmentFunction = ffn
-        desc.colorAttachments[0].pixelFormat = pixelFormat
-        desc.rasterSampleCount = sampleCount   // MSAA
-        // Stroke는 PDF 위에 alpha 합성 — pass 내부 blend (이제 CALayer 합성기 아님).
-        desc.colorAttachments[0].isBlendingEnabled = true
-        desc.colorAttachments[0].rgbBlendOperation = .add
-        desc.colorAttachments[0].alphaBlendOperation = .add
-        desc.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
-        desc.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
-        desc.colorAttachments[0].sourceAlphaBlendFactor = .one
-        desc.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
-
-        do {
-            self.pipeline = try dev.makeRenderPipelineState(descriptor: desc)
-        } catch {
-            assertionFailure("Pipeline create failed: \(error)")
-            return nil
-        }
-
-        // PDF 배경 파이프라인 — opaque, blend 불필요 (먼저 그려져 base가 됨).
-        let pdfDesc = MTLRenderPipelineDescriptor()
-        pdfDesc.vertexFunction = pdfV
-        pdfDesc.fragmentFunction = pdfF
-        pdfDesc.colorAttachments[0].pixelFormat = pixelFormat
-        pdfDesc.rasterSampleCount = sampleCount
-        pdfDesc.colorAttachments[0].isBlendingEnabled = false
-        do {
-            self.pdfPipeline = try dev.makeRenderPipelineState(descriptor: pdfDesc)
-        } catch {
-            assertionFailure("PDF pipeline create failed: \(error)")
-            return nil
-        }
-
-        let sDesc = MTLSamplerDescriptor()
-        sDesc.minFilter = .linear
-        sDesc.magFilter = .linear
-        sDesc.mipFilter = .notMipmapped
-        sDesc.sAddressMode = .clampToEdge
-        sDesc.tAddressMode = .clampToEdge
-        guard let smp = dev.makeSamplerState(descriptor: sDesc) else {
-            assertionFailure("Sampler create failed")
-            return nil
-        }
-        self.pdfSampler = smp
+    init?() {
+        guard let engine = MetalEngine.shared else { return nil }
+        self.engine = engine
 
         let initialCapacity = 100_000
-        guard let buf = dev.makeBuffer(
+        guard let buf = engine.device.makeBuffer(
             length: initialCapacity * MemoryLayout<SIMD2<Float>>.stride,
             options: .storageModeShared
         ) else { return nil }
