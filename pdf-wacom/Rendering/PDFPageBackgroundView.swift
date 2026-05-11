@@ -1,12 +1,23 @@
 import Cocoa
 import PDFKit
 
-// 페이지를 비트맵으로 한 번만 raster해 CALayer.contents에 캐시한다.
-// raster는 background queue에서 수행 — UI 차단 없음. 완료 시 main에서 layer.contents 갱신.
+// 페이지를 비트맵으로 한 번만 raster해 결과를 콜백으로 전달한다.
+// raster는 background queue에서 수행 — UI 차단 없음. 완료 시 main에서 콜백 (CGImage).
 // 사이즈 변경이 임계 이상이거나 backing scale이 바뀌면 다시 raster.
+//
+// === 합성기 우회 (low-latency drawing 핵심) ===
+// 이전엔 이 view가 직접 layer.contents = cgImage로 PDF를 화면에 표시하고,
+// 그 위에 sibling CAMetalLayer (StrokeCanvasView)가 alpha 합성되었다.
+// WindowServer 합성기가 매 vsync마다 두 layer를 blend → cursor/펜 backpressure.
+//
+// 새 구조: 이 view는 raster만 담당하고 결과 CGImage를 콜백으로 StrokeCanvasView에 넘긴다.
+// StrokeCanvasView가 MetalStrokeRenderer로 PDF + stroke를 같은 Metal pass에서 그린다.
+// 이 view 자체는 isHidden=true (PageView에서 set)로 합성기 비용 0.
 final class PDFPageBackgroundView: NSView {
 
     let page: PDFPage
+    /// raster 완료 시 main에서 호출됨. StrokeCanvasView가 받아서 renderer에 업로드.
+    var onImage: ((CGImage) -> Void)?
     private var cachedRasterPixelSize: CGSize = .zero
     private var cachedScale: CGFloat = 0
     private var inflightToken: UInt64 = 0
@@ -17,11 +28,8 @@ final class PDFPageBackgroundView: NSView {
     init(page: PDFPage) {
         self.page = page
         super.init(frame: .zero)
+        // wantsLayer는 NSView 사이즈 통지를 받기 위해 유지. layer.contents는 절대 안 set.
         wantsLayer = true
-        layer?.backgroundColor = NSColor.white.cgColor
-        layer?.minificationFilter = .trilinear
-        layer?.magnificationFilter = .linear
-        layer?.contentsGravity = .resize
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -70,10 +78,9 @@ final class PDFPageBackgroundView: NSView {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 guard self.inflightToken == token else { return }   // stale 무시
-                self.layer?.contents = image
-                self.layer?.contentsScale = scale
                 self.cachedRasterPixelSize = CGSize(width: pixelWidth, height: pixelHeight)
                 self.cachedScale = scale
+                self.onImage?(image)
             }
         }
     }

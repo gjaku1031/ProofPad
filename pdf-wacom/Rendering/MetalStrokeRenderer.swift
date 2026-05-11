@@ -1,5 +1,6 @@
 import Cocoa
 import Metal
+import MetalKit
 import QuartzCore
 import simd
 
@@ -34,6 +35,11 @@ final class MetalStrokeRenderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
+    /// PDF 배경을 같은 Metal pass에서 그리는 파이프라인. opaque metalLiveLayer + 합성기 부담 0 핵심.
+    private let pdfPipeline: MTLRenderPipelineState
+    private let pdfSampler: MTLSamplerState
+    /// 현재 페이지 PDF 비트맵. nil이면 PDF 배경 안 그림 (스트로크만, 투명 배경).
+    private var pdfTexture: MTLTexture?
 
     // MARK: Live stroke (incremental)
 
@@ -66,6 +72,9 @@ final class MetalStrokeRenderer {
     private var bakedBuffer: MTLBuffer?
     private var bakedCapacity: Int = 0
     private var bakedRanges: [BakedRange] = []
+    /// 현재 bakedBuffer에 들어 있는 vertex 개수. appendBaked가 끝에 추가할 때 시작 offset으로 쓰임.
+    /// rebuildBaked는 0으로 reset 후 채워 넣으므로 자동 일관됨.
+    private var bakedVertexCount: Int = 0
 
     // MARK: MSAA / pipeline state
 
@@ -109,7 +118,9 @@ final class MetalStrokeRenderer {
             return nil
         }
         guard let vfn = library.makeFunction(name: "stroke_vertex"),
-              let ffn = library.makeFunction(name: "stroke_fragment") else {
+              let ffn = library.makeFunction(name: "stroke_fragment"),
+              let pdfV = library.makeFunction(name: "pdf_vertex"),
+              let pdfF = library.makeFunction(name: "pdf_fragment") else {
             assertionFailure("Stroke shader functions not found")
             return nil
         }
@@ -119,7 +130,7 @@ final class MetalStrokeRenderer {
         desc.fragmentFunction = ffn
         desc.colorAttachments[0].pixelFormat = pixelFormat
         desc.rasterSampleCount = sampleCount   // MSAA
-        // 투명 배경 위에 alpha 합성되어야 PDF 배경(아래 layer)이 비친다.
+        // Stroke는 PDF 위에 alpha 합성 — pass 내부 blend (이제 CALayer 합성기 아님).
         desc.colorAttachments[0].isBlendingEnabled = true
         desc.colorAttachments[0].rgbBlendOperation = .add
         desc.colorAttachments[0].alphaBlendOperation = .add
@@ -134,6 +145,32 @@ final class MetalStrokeRenderer {
             assertionFailure("Pipeline create failed: \(error)")
             return nil
         }
+
+        // PDF 배경 파이프라인 — opaque, blend 불필요 (먼저 그려져 base가 됨).
+        let pdfDesc = MTLRenderPipelineDescriptor()
+        pdfDesc.vertexFunction = pdfV
+        pdfDesc.fragmentFunction = pdfF
+        pdfDesc.colorAttachments[0].pixelFormat = pixelFormat
+        pdfDesc.rasterSampleCount = sampleCount
+        pdfDesc.colorAttachments[0].isBlendingEnabled = false
+        do {
+            self.pdfPipeline = try dev.makeRenderPipelineState(descriptor: pdfDesc)
+        } catch {
+            assertionFailure("PDF pipeline create failed: \(error)")
+            return nil
+        }
+
+        let sDesc = MTLSamplerDescriptor()
+        sDesc.minFilter = .linear
+        sDesc.magFilter = .linear
+        sDesc.mipFilter = .notMipmapped
+        sDesc.sAddressMode = .clampToEdge
+        sDesc.tAddressMode = .clampToEdge
+        guard let smp = dev.makeSamplerState(descriptor: sDesc) else {
+            assertionFailure("Sampler create failed")
+            return nil
+        }
+        self.pdfSampler = smp
 
         let initialCapacity = 100_000
         guard let buf = dev.makeBuffer(
@@ -210,9 +247,11 @@ final class MetalStrokeRenderer {
     // MARK: - Baked rebuild API (호출자 = StrokeCanvasView)
 
     /// 모든 baked stroke geometry를 view 좌표로 펼쳐서 bakedBuffer에 채운다.
-    /// stroke 변경(mouseUp, erase, undo, redo) 또는 viewport 변경 시 호출.
+    /// erase / undo가 remove로 들어올 때, layout(resize, backing scale 변경) 시 호출.
+    /// **새 stroke 1개만 추가될 때는 appendBaked를 써라 — O(N×M) 대신 O(M)이라 grading 누적 무관.**
     func rebuildBaked(_ recipes: [BakedRecipe]) {
         bakedRanges.removeAll(keepingCapacity: true)
+        bakedVertexCount = 0
         // 우선 필요한 vertex 수 계산 → 큰 버퍼 한 번에 확보 후 채워 넣기.
         var totalVerts = 0
         for r in recipes {
@@ -245,11 +284,66 @@ final class MetalStrokeRenderer {
                                               color: r.color))
             }
         }
+        bakedVertexCount = cursor
+    }
+
+    /// Stroke 1개만 baked buffer 끝에 append. mouseUp으로 새 stroke 추가 시 사용.
+    /// **rebuildBaked는 페이지의 모든 stroke를 다시 펼치므로 stroke 누적될수록 무거워져
+    /// 채점 워크플로(한 페이지에 동그라미·X 수십~수백)에서 commit이 점점 느려진다.**
+    /// 이 path는 O(stroke의 point 수) — N stroke와 무관.
+    func appendBaked(_ recipe: BakedRecipe) {
+        var needed = capSegments * 3 * recipe.points.count
+        if recipe.points.count >= 2 {
+            needed += 6 * (recipe.points.count - 1)
+        }
+        guard needed > 0 else { return }
+        ensureBakedCapacity(bakedVertexCount + needed)
+        guard let buf = bakedBuffer else { return }
+
+        let base = buf.contents().assumingMemoryBound(to: SIMD2<Float>.self)
+        var cursor = bakedVertexCount
+        let strokeStart = cursor
+        writeStrokeGeometry(points: recipe.points,
+                            halfWidth: recipe.halfWidth,
+                            into: base,
+                            cursor: &cursor)
+        let strokeCount = cursor - strokeStart
+        if strokeCount > 0 {
+            bakedRanges.append(BakedRange(start: strokeStart,
+                                          count: strokeCount,
+                                          color: recipe.color))
+        }
+        bakedVertexCount = cursor
     }
 
     /// pageStrokes가 비어있을 때 — bakedBuffer를 비운다.
     func clearBaked() {
         bakedRanges.removeAll(keepingCapacity: true)
+        bakedVertexCount = 0
+    }
+
+    // MARK: - PDF background API
+
+    /// CGImage를 MTLTexture로 업로드해 PDF 배경으로 사용. PDFBackgroundRasterizer가 호출.
+    /// MTKTextureLoader가 origin/포맷 변환 자동 처리 — top-left origin이라 셰이더의 UV mapping과 일치.
+    func setPDFTexture(from image: CGImage?) {
+        guard let image else {
+            pdfTexture = nil
+            return
+        }
+        let loader = MTKTextureLoader(device: device)
+        let options: [MTKTextureLoader.Option: Any] = [
+            .textureUsage: NSNumber(value: MTLTextureUsage.shaderRead.rawValue),
+            .textureStorageMode: NSNumber(value: MTLStorageMode.private.rawValue),
+            .origin: MTKTextureLoader.Origin.topLeft.rawValue,
+            .SRGB: NSNumber(value: false)
+        ]
+        do {
+            pdfTexture = try loader.newTexture(cgImage: image, options: options)
+        } catch {
+            assertionFailure("PDF texture load failed: \(error)")
+            pdfTexture = nil
+        }
     }
 
     // MARK: - Drawing
@@ -281,11 +375,21 @@ final class MetalStrokeRenderer {
         passDesc.colorAttachments[0].resolveTexture = drawable.texture
         passDesc.colorAttachments[0].loadAction = .clear
         passDesc.colorAttachments[0].storeAction = .multisampleResolve
-        passDesc.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
+        // PDF 배경이 모든 pixel 채울 거지만, 첫 layout 전 등 텍스처 없을 때 흰색이 자연스러움.
+        passDesc.colorAttachments[0].clearColor = MTLClearColorMake(1, 1, 1, 1)
 
         if let encoder = cmd.makeRenderCommandEncoder(descriptor: passDesc) {
-            encoder.setRenderPipelineState(pipeline)
 
+            // 0) PDF 배경 — 같은 pass에서 먼저 그려 base가 됨. opaque layer + WindowServer 합성 우회.
+            if let tex = pdfTexture {
+                encoder.setRenderPipelineState(pdfPipeline)
+                encoder.setFragmentTexture(tex, index: 0)
+                encoder.setFragmentSamplerState(pdfSampler, index: 0)
+                encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            }
+
+            // 이후 stroke 파이프라인.
+            encoder.setRenderPipelineState(pipeline)
             var uniforms = StrokeUniforms(
                 viewportPoints: SIMD2<Float>(Float(viewportPoints.width),
                                               Float(viewportPoints.height)),
@@ -408,6 +512,11 @@ final class MetalStrokeRenderer {
         let stride = MemoryLayout<SIMD2<Float>>.stride
         guard let newBuf = device.makeBuffer(length: newCap * stride,
                                              options: .storageModeShared) else { return }
+        // appendBaked로 buffer 키울 때 기존 vertex 보존. rebuildBaked는 호출 전 bakedVertexCount=0이라
+        // 이 memcpy가 no-op이라 비용 없음.
+        if let oldBuf = bakedBuffer, bakedVertexCount > 0 {
+            memcpy(newBuf.contents(), oldBuf.contents(), bakedVertexCount * stride)
+        }
         bakedBuffer = newBuf
         bakedCapacity = newCap
     }

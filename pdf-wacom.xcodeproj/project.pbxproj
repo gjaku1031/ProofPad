@@ -11,6 +11,7 @@
 		1C7ED3616395C5CFA0307525 /* SpreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76FF41821CCF8009E6A96A42 /* SpreadView.swift */; };
 		1CA1C7B84003AA67ACA19147 /* EraserTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A94464651A8F0BD8E36698 /* EraserTool.swift */; };
 		1EC5EFD29CD89E92F8F0265B /* Tool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 824E270F32D01DFFC58F668D /* Tool.swift */; };
+		223CBD8F71E75F6C0CCD1211 /* Signposts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 560AFEBF182E193005461317 /* Signposts.swift */; };
 		2434B8BD8A569F016E61E313 /* PageStrokes.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF404200AB6408D19C7D38EF /* PageStrokes.swift */; };
 		2EA0542015067A0E8869BB03 /* Geometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CC6B7A2EE97CD5E8C725E0F /* Geometry.swift */; };
 		315730D27283150C3E70AC75 /* HostContentViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6352305E3240E0048DA24F22 /* HostContentViewController.swift */; };
@@ -74,6 +75,7 @@
 		4794110F5EED401CDAE6940B /* StrokeCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrokeCanvasView.swift; sourceTree = "<group>"; };
 		4A24BF5D44BE90A0DCE5FE8C /* SpreadStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpreadStripView.swift; sourceTree = "<group>"; };
 		4B576C0F2E812849496571D8 /* PageJumpPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageJumpPanel.swift; sourceTree = "<group>"; };
+		560AFEBF182E193005461317 /* Signposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Signposts.swift; sourceTree = "<group>"; };
 		57C4CF602FB80C6E886CB16E /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		58BB71B89A1230DB20235B46 /* PDFPageBackgroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPageBackgroundView.swift; sourceTree = "<group>"; };
 		60E0A092E0C85F0D861B82A8 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -161,6 +163,7 @@
 			isa = PBXGroup;
 			children = (
 				1CC6B7A2EE97CD5E8C725E0F /* Geometry.swift */,
+				560AFEBF182E193005461317 /* Signposts.swift */,
 				D9D045A039BF6B9CAD587169 /* StrokeCodec.swift */,
 			);
 			path = Utilities;
@@ -353,6 +356,7 @@
 				A9BDAEDAC170D8D48F84AEE4 /* PenSettings.swift in Sources */,
 				BA64A088AF7D366FC210919F /* PenTool.swift in Sources */,
 				E18EC009B9500B76D81BD61C /* SidebarViewController.swift in Sources */,
+				223CBD8F71E75F6C0CCD1211 /* Signposts.swift in Sources */,
 				83CA1477C5787D160F0285F8 /* SpreadStripView.swift in Sources */,
 				1C7ED3616395C5CFA0307525 /* SpreadView.swift in Sources */,
 				ACD4A411F759C9DBC7E1B36A /* Stroke.swift in Sources */,

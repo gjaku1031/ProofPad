@@ -42,9 +42,13 @@ final class PageView: NSView {
         )
         super.init(frame: .zero)
         wantsLayer = true
-        // 그림자 제거 — shadowPath로 cost는 낮춰도 metalLiveLayer가 매 frame present될 때마다
-        // 부모 PageView를 재합성하게 만들어 cursor display latency 누적의 원인. 페이지 경계가
-        // 필요하면 layer.border나 PageBackgroundView 자체에 1px 회색 stroke로 대체 가능.
+        // PDF를 별도 sibling CALayer로 표시하지 않고 StrokeCanvasView의 Metal layer가 PDF + stroke를
+        // 같은 pass로 그린다 → WindowServer 합성기 PDF↔Metal alpha 합성 제거 (cursor lag 원인).
+        // backgroundView는 raster 트리거만 받기 위해 view tree에 두되 isHidden=true로 합성 우회.
+        backgroundView.isHidden = true
+        backgroundView.onImage = { [weak canvasView = canvasView] image in
+            canvasView?.setPDFImage(image)
+        }
         addSubview(backgroundView)
         addSubview(canvasView)
         canvasView.onChange = onChange

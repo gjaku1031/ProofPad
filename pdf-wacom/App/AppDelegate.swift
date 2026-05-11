@@ -3,6 +3,7 @@ import Cocoa
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var arrowKeyMonitor: Any?
+    private var proximityMonitor: Any?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenuBuilder.build()
@@ -18,8 +19,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
         installArrowKeyNavigation()
+        installTabletProximityMonitor()
         DispatchQueue.main.async {
             self.restoreSessionOrPromptOpen()
+        }
+    }
+
+    /// Wacom 펜이 태블릿 근접 영역 진입/이탈 시 TabletEventRouter 상태 갱신.
+    /// 이게 없으면 proximity 경계 transition 때 subtype이 잠시 .mouseEvent로 오는 펜 샘플들이
+    /// 거부되어 stroke에 구멍 생김 (한글 받침 같은 짧은 획 누락 사례).
+    private func installTabletProximityMonitor() {
+        proximityMonitor = NSEvent.addLocalMonitorForEvents(matching: .tabletProximity) { event in
+            TabletEventRouter.noteProximity(event)
+            return event
         }
     }
 

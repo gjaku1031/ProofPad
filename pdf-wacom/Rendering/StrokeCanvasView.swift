@@ -1,6 +1,7 @@
 import Cocoa
 import Metal
 import QuartzCore
+import CoreVideo
 
 // MARK: - StrokeCanvasView (unified Metal)
 //
@@ -46,6 +47,22 @@ final class StrokeCanvasView: NSView {
     private var activeTool: Tool?
     private var lastLaidOutSize: CGSize = .zero
 
+    // MARK: - Frame pacing (CVDisplayLink)
+    //
+    // mouseDragged는 Wacom 펜에서 125Hz, 마우스 coalesced에서도 60Hz+로 들어온다.
+    // 매 mouseDragged마다 present()를 부르면 WindowServer / 합성기가 그 frequency로 commit을 받게 되어
+    // 백프레셔 → cursor display lag, gpuDone 사이 44ms 갭 같은 증상이 발생한다 (이전 profiling으로 확인).
+    //
+    // 해결: present를 디스플레이 refresh rate (60Hz)에 맞춰 rate-limit.
+    //   - mouseDragged 핫패스는 setNeedsPresent() 플래그만 set
+    //   - CVDisplayLink가 vsync에 콜백 → main 큐로 dispatch → 플래그 있으면 1회 present
+    //   - mouseDown / commitStroke / erase / undo / layout 등 one-shot 액션은 presentNow() 즉시
+    //
+    // 동일 패턴이 PencilKit / Procreate / Figma 등 저지연 드로잉 앱의 표준 구조.
+    private var displayLink: CVDisplayLink?
+    /// main thread에서만 read/write. CVDisplayLink 콜백은 DispatchQueue.main.async로 메인에 옴.
+    private var presentScheduled = false
+
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -62,14 +79,20 @@ final class StrokeCanvasView: NSView {
         self.metalRenderer = renderer
         metalLiveLayer.device = renderer?.device
         metalLiveLayer.pixelFormat = .bgra8Unorm
-        metalLiveLayer.isOpaque = false                     // 투명 합성 → PDF 배경 비침
+        // OPAQUE — PDF를 같은 Metal pass에서 그리므로 sibling PDF layer와의 alpha 합성 불필요.
+        // WindowServer 합성기는 우리 layer를 단순 카피만 하면 됨 (blend 0).
+        // 이게 cursor lag / mid-stroke hitch의 근본 원인이었음.
+        metalLiveLayer.isOpaque = true
         metalLiveLayer.framebufferOnly = true
         // unified Metal에선 sibling CALayer가 변하지 않으므로 CATransaction 동기 불필요.
         // false로 두면 cmd.present + commit로 즉시 큐잉만 하고 main 스레드 안 block (이전 true +
         // waitUntilScheduled 패턴이 GPU 바쁠 때 매 present마다 main을 잠깐씩 stall시켜 이벤트 backup 유발).
         metalLiveLayer.presentsWithTransaction = false
         metalLiveLayer.maximumDrawableCount = 3
-        metalLiveLayer.displaySyncEnabled = true
+        // CVDisplayLink가 이미 vsync에 맞춰 present를 보내므로 displaySync 추가 wait이 중복.
+        // true일 때: drawable이 *다음* vsync에 표시 → +16.67ms latency.
+        // false + DL pacing: 이번 vsync에 즉시 scan-out. tearing risk는 DL timing이 vsync에 align되어 낮음.
+        metalLiveLayer.displaySyncEnabled = false
         metalLiveLayer.allowsNextDrawableTimeout = true
         layer?.addSublayer(metalLiveLayer)
         metalLiveLayer.actions = [
@@ -81,6 +104,21 @@ final class StrokeCanvasView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    deinit {
+        stopDisplayLink()
+    }
+
+    // MARK: - Window attachment lifecycle (display link)
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            startDisplayLink()
+        } else {
+            stopDisplayLink()
+        }
+    }
 
     override func layout() {
         super.layout()
@@ -95,7 +133,7 @@ final class StrokeCanvasView: NSView {
             redrawLiveStrokeFromModel()
         }
         // viewport 바뀌었으면 바로 present해 이전 stale 이미지 안 보이게.
-        presentLive()
+        presentNow()
     }
 
     override func viewDidChangeBackingProperties() {
@@ -105,7 +143,7 @@ final class StrokeCanvasView: NSView {
         if inProgressStroke != nil {
             redrawLiveStrokeFromModel()
         }
-        presentLive()
+        presentNow()
     }
 
     private func updateMetalDrawableSize() {
@@ -121,6 +159,10 @@ final class StrokeCanvasView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard TabletEventRouter.decide(event) == .pen else { return }
         Signposts.signposter.emitEvent("mouseDown")
+        // 드로잉 중 시스템 커서 숨김. macOS의 cursor 표시 자체가 ink 렌더보다 한 박자 늦게 따라가는
+        // 경향이 있어 사용자가 "잉크가 펜을 못 따라잡는다"고 인식. ink 자체가 펜 위치 표시자.
+        // mouseUp에서 반드시 unhide. NSCursor.hide()/unhide()는 카운터식이라 짝 맞아야 함.
+        NSCursor.hide()
         let p = pagePoint(for: event)
         let tool = toolController.tool(forModifierFlags: event.modifierFlags)
         activeTool = tool
@@ -136,11 +178,15 @@ final class StrokeCanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard activeTool != nil else { return }
+        guard activeTool != nil else {
+            // activeTool nil이어도 hide/unhide 카운터 안 어긋나게 paired unhide 안 함 (애초에 hide 안 했음).
+            return
+        }
         Signposts.signposter.emitEvent("mouseUp")
         let p = pagePoint(for: event)
         activeTool?.mouseUp(at: p, event: event, canvas: self)
         activeTool = nil
+        NSCursor.unhide()
     }
 
     // MARK: - Coord transforms (view ↔ page)
@@ -172,7 +218,8 @@ final class StrokeCanvasView: NSView {
             let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
             metalRenderer?.appendLivePoint(v)
         }
-        presentLive()
+        // mouseDown 직후 첫 점은 즉시 보여줘야 펜이 닿은 느낌. rate-limit 안 함.
+        presentNow()
     }
 
     func updateInProgressStroke(_ stroke: Stroke) {
@@ -185,19 +232,25 @@ final class StrokeCanvasView: NSView {
             let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
             renderer.appendLivePoint(v)
         }
-        presentLive()
+        // 핫패스 — 매 mouseDragged마다 present 하면 WindowServer가 백프레셔. CVDisplayLink가 vsync에 1회만.
+        setNeedsPresent()
     }
 
     func commitStroke(_ stroke: Stroke) {
         let state = Signposts.signposter.beginInterval("commit")
         defer { Signposts.signposter.endInterval("commit", state) }
         inProgressStroke = nil
-        addStrokeRecordingUndo(stroke, actionName: "Drawing")
-        // baked에 합쳐졌으므로 live는 비운다. defer로 baked rebuild가 먼저 frame에 반영되게.
-        DispatchQueue.main.async { [weak self] in
-            self?.metalRenderer?.endLiveStroke()
-            self?.presentLive()
+        // 모델/baked/live를 1 trip에 처리해서 present 1회로 끝낸다.
+        // 이전엔 addStroke가 present한 뒤 deferred async로 endLive + 또 present (2회). 시각 동일하므로 1회로 통합.
+        pageStrokes.add(stroke)
+        appendStrokeToBaked(stroke)
+        metalRenderer?.endLiveStroke()
+        presentNow()
+        window?.undoManager?.setActionName("Drawing")
+        window?.undoManager?.registerUndo(withTarget: self) { canvas in
+            canvas.removeStrokeRecordingUndo(stroke)
         }
+        onChange?()
     }
 
     /// inProgressStroke의 모든 점을 view 좌표로 다시 변환해 Metal renderer에 채우고 redraw.
@@ -232,6 +285,29 @@ final class StrokeCanvasView: NSView {
         renderer.rebuildBaked(recipes)
     }
 
+    /// PDFPageBackgroundView가 raster 완료 시 호출. PDF 비트맵을 Metal renderer에 텍스처로 전달.
+    /// 호출 후 곧바로 present해서 새 PDF 이미지를 화면에 반영.
+    func setPDFImage(_ image: CGImage) {
+        metalRenderer?.setPDFTexture(from: image)
+        presentNow()
+    }
+
+    /// 한 stroke를 baked buffer 끝에 append (incremental). rebuildBakedFromModel과 달리 O(stroke 점수).
+    /// add 경로(commit, redo)에서만 호출. remove / resize는 여전히 full rebuild.
+    private func appendStrokeToBaked(_ stroke: Stroke) {
+        guard let renderer = metalRenderer else { return }
+        let viewPoints: [SIMD2<Float>] = stroke.points.map { p in
+            let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
+            return SIMD2<Float>(Float(v.x), Float(v.y))
+        }
+        let recipe = MetalStrokeRenderer.BakedRecipe(
+            points: viewPoints,
+            color: colorVector(for: stroke.color),
+            halfWidth: Float(stroke.width) * 0.5
+        )
+        renderer.appendBaked(recipe)
+    }
+
     private func colorVector(for color: NSColor) -> SIMD4<Float> {
         let c = color.usingColorSpace(.deviceRGB) ?? color
         return SIMD4<Float>(Float(c.redComponent),
@@ -240,8 +316,51 @@ final class StrokeCanvasView: NSView {
                             Float(c.alphaComponent))
     }
 
-    private func presentLive() {
+    // MARK: - Present (rate-limited via CVDisplayLink)
+
+    /// One-shot 액션용. 즉시 present.
+    private func presentNow() {
+        presentScheduled = false
         metalRenderer?.draw(in: metalLiveLayer, viewportPoints: bounds.size)
+    }
+
+    /// 핫패스용 (mouseDragged). 플래그만 set, 실제 present는 다음 vsync에 displayLink 콜백이 처리.
+    private func setNeedsPresent() {
+        presentScheduled = true
+    }
+
+    private func startDisplayLink() {
+        guard displayLink == nil else { return }
+        var link: CVDisplayLink?
+        let createResult = CVDisplayLinkCreateWithActiveCGDisplays(&link)
+        guard createResult == kCVReturnSuccess, let link else { return }
+
+        let opaque = Unmanaged.passUnretained(self).toOpaque()
+        CVDisplayLinkSetOutputCallback(link, { (_, _, _, _, _, context) -> CVReturn in
+            guard let context else { return kCVReturnSuccess }
+            let view = Unmanaged<StrokeCanvasView>.fromOpaque(context).takeUnretainedValue()
+            // DL 스레드 → main으로 hop. 캡처한 view가 main 블록 실행까지 살아있음을 보장하려고
+            // weak으로 잡는다. stopDisplayLink가 deinit/viewWillMove에서 먼저 stop을 보장하므로
+            // 일반적으로는 view가 살아있지만 race 안전 차원.
+            DispatchQueue.main.async { [weak view] in
+                view?.displayLinkFired()
+            }
+            return kCVReturnSuccess
+        }, opaque)
+        CVDisplayLinkStart(link)
+        self.displayLink = link
+    }
+
+    private func stopDisplayLink() {
+        guard let link = displayLink else { return }
+        CVDisplayLinkStop(link)
+        self.displayLink = nil
+    }
+
+    /// Main thread, dispatched from CVDisplayLink callback.
+    private func displayLinkFired() {
+        guard presentScheduled else { return }
+        presentNow()
     }
 
     func removeStroke(id: UUID) {
@@ -263,13 +382,12 @@ final class StrokeCanvasView: NSView {
 
     // MARK: - Add / Remove with undo
 
-    private func addStrokeRecordingUndo(_ stroke: Stroke, actionName: String? = nil) {
+    /// Redo path (removeStrokeRecordingUndo가 등록한 redo가 호출). 새 stroke를 incremental append.
+    /// 초기 commit은 commitStroke가 직접 처리 — 거기서 endLiveStroke까지 같이 묶기 위해.
+    private func addStrokeRecordingUndo(_ stroke: Stroke) {
         pageStrokes.add(stroke)
-        rebuildBakedFromModel()
-        presentLive()
-        if let name = actionName {
-            window?.undoManager?.setActionName(name)
-        }
+        appendStrokeToBaked(stroke)
+        presentNow()
         window?.undoManager?.registerUndo(withTarget: self) { canvas in
             canvas.removeStrokeRecordingUndo(stroke)
         }
@@ -278,8 +396,10 @@ final class StrokeCanvasView: NSView {
 
     private func removeStrokeRecordingUndo(_ stroke: Stroke) {
         pageStrokes.remove(id: stroke.id)
+        // remove는 buffer 중간에 구멍을 내야 해서 incremental compact가 복잡. 전체 rebuild가 단순하고
+        // erase / undo는 mouseDragged만큼 빈번하지 않으므로 cost 허용.
         rebuildBakedFromModel()
-        presentLive()
+        presentNow()
         window?.undoManager?.registerUndo(withTarget: self) { canvas in
             canvas.addStrokeRecordingUndo(stroke)
         }
