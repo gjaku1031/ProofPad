@@ -78,10 +78,17 @@ final class MetalStrokeRenderer {
 
     // MARK: Frame pacing
 
-    /// 동시에 in-flight 가능한 frame 수. cap=1 → 한 vsync에 1 present.
-    /// 초과되면 present skip하고 점만 누적 → 다음 present 때 최신 state로 표시.
-    private let maxFramesInFlight = 1
-    private var framesInFlight = 0
+    /// in-flight frame 제어 — Semaphore로 main 스레드 거치지 않고 GPU 완료 시점에 직접 release.
+    ///
+    /// 이전 구조(`Int` + `DispatchQueue.main.async { framesInFlight -= 1 }`)는 main이 mouseDragged
+    /// 이벤트로 바쁠 때 async decrement가 main runloop 끝까지 대기되어 카운터가 stuck.
+    /// 그 사이 event들은 cap에 막혀 present skip → 한참 뒤에 decrement 처리되면 누적된 점이 한 번에 표시
+    /// (= 사용자가 보는 "삐걱").
+    ///
+    /// Semaphore.signal은 Metal queue의 completedHandler 스레드에서 즉시 호출되어 main 점유 무관.
+    /// cap=2 (double-buffering) — 한 vsync 사이에 2 frame을 큐잉할 수 있어 흐름이 끊기지 않음.
+    private let maxFramesInFlight = 2
+    private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
     /// 마지막 draw 시 viewportPoints — 외부에서 rebuildBaked 시 같은 viewport 기준으로 점 변환 가능.
     private(set) var lastViewportPoints: CGSize = .zero
@@ -249,13 +256,19 @@ final class MetalStrokeRenderer {
 
     func draw(in layer: CAMetalLayer, viewportPoints: CGSize) {
         guard viewportPoints.width > 0, viewportPoints.height > 0 else { return }
-        guard framesInFlight < maxFramesInFlight else { return }
-        guard let drawable = layer.nextDrawable() else { return }
+        // cap 검사 — 즉시 timeout이면 in-flight 가득 → skip. (block 안 함.)
+        guard inFlightSemaphore.wait(timeout: .now()) == .success else { return }
+        guard let drawable = layer.nextDrawable() else {
+            inFlightSemaphore.signal(); return
+        }
         ensureMultisampleTexture(matching: layer.drawableSize)
-        guard let msTexture = multisampleTexture else { return }
-        guard let cmd = queue.makeCommandBuffer() else { return }
+        guard let msTexture = multisampleTexture else {
+            inFlightSemaphore.signal(); return
+        }
+        guard let cmd = queue.makeCommandBuffer() else {
+            inFlightSemaphore.signal(); return
+        }
 
-        framesInFlight += 1
         lastViewportPoints = viewportPoints
 
         let passDesc = MTLRenderPassDescriptor()
@@ -306,10 +319,9 @@ final class MetalStrokeRenderer {
             encoder.endEncoding()
         }
 
+        // GPU 완료 시 Metal queue 스레드에서 즉시 semaphore release — main 점유 무관.
         cmd.addCompletedHandler { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.framesInFlight -= 1
-            }
+            self?.inFlightSemaphore.signal()
         }
         // presentsWithTransaction=false 표준 패턴 — main 스레드 block 없이 큐잉만.
         cmd.present(drawable)
