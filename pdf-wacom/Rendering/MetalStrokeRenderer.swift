@@ -103,6 +103,19 @@ final class MetalStrokeRenderer {
     private(set) var lastViewportPoints: CGSize = .zero
     private var scaleFactor: Float = 2
 
+    // MARK: - Input prediction
+    //
+    // 펜 입력 → 화면 표시까지 inherent latency가 macOS/Wacom 환경에서 30~50ms 존재.
+    // 마지막 2점의 속도를 extrapolate해 현재 frame에 한 샘플 분량 만큼 앞서 ink를 그린다.
+    // 사용자 인식: 잉크가 펜 끝을 LEAD → "딱 따라온다"는 체감.
+    //
+    // 보수적 strength (1.0 = 한 샘플 거리). 펜 stop / direction change에서 미세한 overshoot 발생 가능하나
+    // 다음 mouseDragged에서 즉시 보정되어 1 frame 내 사라짐.
+    //
+    // 구현: liveBuffer에 안 쓰고 매 draw마다 setVertexBytes로 transient upload — GPU race 회피.
+    private static let predictionStrength: Float = 1.0
+    private var predictedTailVerts: [SIMD2<Float>] = []
+
     static var isAvailable: Bool { MTLCreateSystemDefaultDevice() != nil }
 
     // MARK: - Init
@@ -423,6 +436,23 @@ final class MetalStrokeRenderer {
                 encoder.drawPrimitives(type: .triangle,
                                        vertexStart: 0,
                                        vertexCount: liveCount)
+
+                // 3) predicted tail — 마지막 두 점의 velocity로 한 샘플 앞 위치까지 ink를 확장.
+                // 같은 색 fragment uniform 재사용. setVertexBytes로 transient (race-free).
+                let predictedCount = buildPredictedTail()
+                if predictedCount > 0 {
+                    predictedTailVerts.withUnsafeBufferPointer { ptr in
+                        guard let base = ptr.baseAddress else { return }
+                        encoder.setVertexBytes(
+                            base,
+                            length: predictedCount * MemoryLayout<SIMD2<Float>>.stride,
+                            index: 0
+                        )
+                        encoder.drawPrimitives(type: .triangle,
+                                               vertexStart: 0,
+                                               vertexCount: predictedCount)
+                    }
+                }
             }
 
             encoder.endEncoding()
@@ -436,6 +466,47 @@ final class MetalStrokeRenderer {
         // presentsWithTransaction=false 표준 패턴 — main 스레드 block 없이 큐잉만.
         cmd.present(drawable)
         cmd.commit()
+    }
+
+    // MARK: - Prediction
+
+    /// 마지막 두 livePoint 차이를 velocity로 extrapolate → predicted = last + delta * strength.
+    /// segment + cap geometry를 predictedTailVerts에 쓰고 vertex count 반환.
+    /// 점이 2개 미만이거나 동일 위치면 0 반환.
+    private func buildPredictedTail() -> Int {
+        predictedTailVerts.removeAll(keepingCapacity: true)
+        guard liveActive, livePoints.count >= 2 else { return 0 }
+        let last = livePoints[livePoints.count - 1]
+        let prev = livePoints[livePoints.count - 2]
+        let delta = last - prev
+        let deltaLen = simd_length(delta)
+        guard deltaLen > 0.0001 else { return 0 }
+
+        let predicted = last + delta * Self.predictionStrength
+        let segDir = predicted - last
+        let segLen = simd_length(segDir)
+        guard segLen > 0.0001 else { return 0 }
+        let dir = segDir / segLen
+        let perp = SIMD2<Float>(-dir.y, dir.x) * liveHalfWidth
+
+        predictedTailVerts.reserveCapacity(6 + capSegments * 3)
+        // segment last → predicted
+        predictedTailVerts.append(last + perp)
+        predictedTailVerts.append(last - perp)
+        predictedTailVerts.append(predicted + perp)
+        predictedTailVerts.append(last - perp)
+        predictedTailVerts.append(predicted - perp)
+        predictedTailVerts.append(predicted + perp)
+        // round cap at predicted
+        let twoPi: Float = .pi * 2
+        for i in 0..<capSegments {
+            let a0 = twoPi * Float(i) / Float(capSegments)
+            let a1 = twoPi * Float(i + 1) / Float(capSegments)
+            predictedTailVerts.append(predicted)
+            predictedTailVerts.append(predicted + SIMD2<Float>(cos(a0), sin(a0)) * liveHalfWidth)
+            predictedTailVerts.append(predicted + SIMD2<Float>(cos(a1), sin(a1)) * liveHalfWidth)
+        }
+        return predictedTailVerts.count
     }
 
     // MARK: - Geometry helpers
