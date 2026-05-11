@@ -17,12 +17,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installApplicationIcon()
         NSApp.activate(ignoringOtherApps: true)
         installArrowKeyNavigation()
         installTabletProximityMonitor()
         DispatchQueue.main.async {
             self.restoreSessionOrPromptOpen()
         }
+    }
+
+    private func installApplicationIcon() {
+        guard let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+              let icon = NSImage(contentsOf: iconURL) else { return }
+        NSApp.applicationIconImage = icon
     }
 
     /// Wacom 펜이 태블릿 근접 영역 진입/이탈 시 TabletEventRouter 상태 갱신.
