@@ -324,16 +324,24 @@ private final class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
-private final class RecentFileRow: NSControl {
+final class RecentFileRow: NSButton {
     private let url: URL
     private let onOpen: (URL) -> Void
     private let titleLabel = NSTextField(labelWithString: "")
     private let pathLabel = NSTextField(labelWithString: "")
+    private var isHovering = false
 
     init(url: URL, onOpen: @escaping (URL) -> Void) {
         self.url = url
         self.onOpen = onOpen
         super.init(frame: .zero)
+        title = ""
+        isBordered = false
+        bezelStyle = .regularSquare
+        setButtonType(.momentaryPushIn)
+        sendAction(on: [.leftMouseUp])
+        target = self
+        action = #selector(openRecent)
         wantsLayer = true
         layer?.cornerRadius = 7
         toolTip = url.path
@@ -356,6 +364,7 @@ private final class RecentFileRow: NSControl {
         titleLabel.font = .systemFont(ofSize: 13.5, weight: .medium)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
+        titleLabel.isSelectable = false
         textStack.addArrangedSubview(titleLabel)
 
         pathLabel.stringValue = url.deletingLastPathComponent().path
@@ -363,6 +372,7 @@ private final class RecentFileRow: NSControl {
         pathLabel.textColor = .secondaryLabelColor
         pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.maximumNumberOfLines = 1
+        pathLabel.isSelectable = false
         textStack.addArrangedSubview(pathLabel)
 
         NSLayoutConstraint.activate([
@@ -387,16 +397,22 @@ private final class RecentFileRow: NSControl {
         true
     }
 
+    override var isHighlighted: Bool {
+        didSet { updateBackground() }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         bounds.contains(point) ? self : nil
     }
 
     override func mouseEntered(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.72).cgColor
+        isHovering = true
+        updateBackground()
     }
 
     override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.clear.cgColor
+        isHovering = false
+        updateBackground()
     }
 
     override func updateTrackingAreas() {
@@ -408,16 +424,17 @@ private final class RecentFileRow: NSControl {
                                        userInfo: nil))
     }
 
-    override func mouseDown(with event: NSEvent) {
-        layer?.backgroundColor = NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).cgColor
+    @objc private func openRecent() {
+        onOpen(url)
     }
 
-    override func mouseUp(with event: NSEvent) {
-        let local = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(local) else {
+    private func updateBackground() {
+        if isHighlighted {
+            layer?.backgroundColor = NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).cgColor
+        } else if isHovering {
+            layer?.backgroundColor = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.72).cgColor
+        } else {
             layer?.backgroundColor = NSColor.clear.cgColor
-            return
         }
-        onOpen(url)
     }
 }

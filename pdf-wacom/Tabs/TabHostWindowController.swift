@@ -338,6 +338,13 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     }
 
     private func openRecentDocument(_ url: URL) {
+        let normalizedURL = url.standardizedFileURL
+        if let existing = documents.first(where: { $0.fileURL?.standardizedFileURL == normalizedURL }) {
+            RecentPDFStore.shared.noteOpened(normalizedURL)
+            activate(document: existing)
+            return
+        }
+
         NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { [weak self] document, _, error in
             if let error {
                 self?.presentError(error)
