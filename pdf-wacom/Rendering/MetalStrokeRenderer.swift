@@ -257,7 +257,12 @@ final class MetalStrokeRenderer {
     func draw(in layer: CAMetalLayer, viewportPoints: CGSize) {
         guard viewportPoints.width > 0, viewportPoints.height > 0 else { return }
         // cap 검사 — 즉시 timeout이면 in-flight 가득 → skip. (block 안 함.)
-        guard inFlightSemaphore.wait(timeout: .now()) == .success else { return }
+        guard inFlightSemaphore.wait(timeout: .now()) == .success else {
+            Signposts.signposter.emitEvent("drawSkip")
+            return
+        }
+        let drawState = Signposts.signposter.beginInterval("draw")
+        defer { Signposts.signposter.endInterval("draw", drawState) }
         guard let drawable = layer.nextDrawable() else {
             inFlightSemaphore.signal(); return
         }
@@ -321,6 +326,7 @@ final class MetalStrokeRenderer {
 
         // GPU 완료 시 Metal queue 스레드에서 즉시 semaphore release — main 점유 무관.
         cmd.addCompletedHandler { [weak self] _ in
+            Signposts.signposter.emitEvent("gpuDone")
             self?.inFlightSemaphore.signal()
         }
         // presentsWithTransaction=false 표준 패턴 — main 스레드 block 없이 큐잉만.

@@ -120,6 +120,7 @@ final class StrokeCanvasView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard TabletEventRouter.decide(event) == .pen else { return }
+        Signposts.signposter.emitEvent("mouseDown")
         let p = pagePoint(for: event)
         let tool = toolController.tool(forModifierFlags: event.modifierFlags)
         activeTool = tool
@@ -128,12 +129,15 @@ final class StrokeCanvasView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard activeTool != nil else { return }
+        let state = Signposts.signposter.beginInterval("mouseDragged")
+        defer { Signposts.signposter.endInterval("mouseDragged", state) }
         let p = pagePoint(for: event)
         activeTool?.mouseDragged(to: p, event: event, canvas: self)
     }
 
     override func mouseUp(with event: NSEvent) {
         guard activeTool != nil else { return }
+        Signposts.signposter.emitEvent("mouseUp")
         let p = pagePoint(for: event)
         activeTool?.mouseUp(at: p, event: event, canvas: self)
         activeTool = nil
@@ -185,6 +189,8 @@ final class StrokeCanvasView: NSView {
     }
 
     func commitStroke(_ stroke: Stroke) {
+        let state = Signposts.signposter.beginInterval("commit")
+        defer { Signposts.signposter.endInterval("commit", state) }
         inProgressStroke = nil
         addStrokeRecordingUndo(stroke, actionName: "Drawing")
         // baked에 합쳐졌으므로 live는 비운다. defer로 baked rebuild가 먼저 frame에 반영되게.
@@ -209,6 +215,8 @@ final class StrokeCanvasView: NSView {
     /// pageStrokes 전체를 view 좌표 BakedRecipe 배열로 변환해 renderer에 전달.
     /// O(N stroke × M point) — stroke add/remove/resize 때만 호출되므로 빈도 낮음.
     private func rebuildBakedFromModel() {
+        let state = Signposts.signposter.beginInterval("rebuildBaked")
+        defer { Signposts.signposter.endInterval("rebuildBaked", state) }
         guard let renderer = metalRenderer else { return }
         let recipes: [MetalStrokeRenderer.BakedRecipe] = pageStrokes.strokes.map { stroke in
             let viewPoints: [SIMD2<Float>] = stroke.points.map { p in
