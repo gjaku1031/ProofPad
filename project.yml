@@ -36,22 +36,11 @@ targets:
         NSPrincipalClass: NSApplication
         NSHighResolutionCapable: true
         CFBundleDocumentTypes:
-          - CFBundleTypeName: pdf-wacom Note
-            CFBundleTypeRole: Editor
-            LSItemContentTypes: [com.ken.pdfnote]
-            LSTypeIsPackage: true
-            NSDocumentClass: NoteDocument
           - CFBundleTypeName: PDF Document
-            CFBundleTypeRole: Viewer
+            CFBundleTypeRole: Editor
             LSItemContentTypes: [com.adobe.pdf]
             LSHandlerRank: Alternate
-            NSDocumentClass: NoteDocument
-        UTExportedTypeDeclarations:
-          - UTTypeIdentifier: com.ken.pdfnote
-            UTTypeDescription: pdf-wacom Note
-            UTTypeConformsTo: [com.apple.package]
-            UTTypeTagSpecification:
-              public.filename-extension: [pdfnote]
+            NSDocumentClass: PDFInkDocument
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ken.pdf-wacom

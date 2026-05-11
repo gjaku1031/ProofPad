@@ -72,7 +72,7 @@ enum MainMenuBuilder {
         menu.addItem(saveAs)
 
         menu.addItem(.separator())
-        let export = NSMenuItem(title: "Export PDF…",
+        let export = NSMenuItem(title: "Export Flattened PDF…",
                                 action: Selector(("exportPDF:")),
                                 keyEquivalent: "E")
         export.keyEquivalentModifierMask = [.command, .shift]

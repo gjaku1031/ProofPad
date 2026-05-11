@@ -3,7 +3,7 @@ import SwiftUI
 
 // host 윈도우 NSToolbar.
 // [P1|P2|P3|⌫ Eraser] — 같은 펜을 한 번 더 클릭하면 그 펜 segment 아래에 색·두께 편집 popover.
-// 우측: Export PDF.
+// 우측: flattened PDF export.
 final class ToolbarBuilder: NSObject, NSToolbarDelegate {
 
     static let identifier = NSToolbar.Identifier("MainToolbar.v4")
@@ -26,7 +26,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         return toolbar
     }
 
-    private static var delegateKey = "ToolbarBuilderDelegate"
+    private static var delegateKey: UInt8 = 0
 
     private weak var toolsControl: NSSegmentedControl?
     private var penEditorPopover: NSPopover?
@@ -93,9 +93,9 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
 
     private func makeExportItem() -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: ItemID.exportPDF)
-        item.label = "Export PDF"
-        item.paletteLabel = "Export PDF"
-        item.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Export PDF")
+        item.label = "Flatten"
+        item.paletteLabel = "Export Flattened PDF"
+        item.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Export Flattened PDF")
         item.action = Selector(("exportPDF:"))
         item.target = nil
         return item

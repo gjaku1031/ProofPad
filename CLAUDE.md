@@ -37,7 +37,8 @@ chore: gitignore 정리
 - **입력**: Wacom 펜만 그리기 (`NSEvent.subtype == .tabletPoint`). 마우스/트랙패드 차단.
 - **펜 후미 자동 인식 X**. 임시 지우개는 ⌃ hold (Wacom 사이드 스위치를 Modifier→Control로 매핑).
 - **두 페이지 보기 + 표지 단독** 옵션. 한 페이지 모드도 토글로 전환.
-- **.pdfnote 패키지** 포맷 (`manifest.json` + `source.pdf` + `strokes/page-XXXX.bin`).
+- **PDF-first 저장**. 필기는 앱 작성 `PDFAnnotation(.ink)`으로 PDF 안에 저장하고,
+  편집 중에는 런타임 `PageStrokes` 모델로 올려 Metal에서 저지연 렌더.
 - **단일 호스트 윈도우**, 탭당 NSDocument 1개. 시스템 NSWindow tabbing은 사용 안 함.
 - **PDF + stroke 단일 Metal pass**. `metalLiveLayer.isOpaque = true` — WindowServer 합성기 부담 0 (Notability/Goodnotes 패턴).
 - **CVDisplayLink 60Hz frame pacing**. mouseDragged는 점 누적만, vsync에 한 번 present.
@@ -56,7 +57,7 @@ NSApplication
     ├── NSToolbar                    펜 segment + Sidebar 토글 + Export
     ├── NSTitlebarAccessory          AppTabBarView (풀스크린에서 자동 숨김)
     └── HostContentViewController
-        └── DocumentViewController   탭당 1개. NSSplitView(sidebar | content)
+        └── DocumentViewController   탭당 1개. PDFInkDocument 기반 NSSplitView(sidebar | content)
             ├── SidebarViewController 페이지 모드 토글 + 썸네일 그리드(NSCollectionView)
             └── SpreadStripView (NSScrollView documentView)
                 └── SpreadView × N

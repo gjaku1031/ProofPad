@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 // MARK: - DocumentViewController
 //
-// 한 NoteDocument를 표시하는 NSViewController. 탭 하나 = 이 인스턴스 하나.
+// 한 PDFInkDocument를 표시하는 NSViewController. 탭 하나 = 이 인스턴스 하나.
 // TabHostWindowController가 활성 탭의 viewController만 child VC로 add/remove한다.
 //
 // === View 계층 ===
@@ -21,15 +21,15 @@ import UniformTypeIdentifiers
 //                             └── StrokeCanvasView (펜 입력 + 렌더)
 //
 // === 책임 ===
-//   - Spread layout 갱신 (manifest.coverIsSinglePage / pagesPerSpread 변경 시 reloadSpreads)
+//   - Spread layout 갱신 (coverIsSinglePage / pagesPerSpread 변경 시 reloadSpreads)
 //   - ZoomController + SpreadStripView 연결
 //   - 메뉴/툴바 selector(zoomIn, fitWidth, exportPDF, …) 직접 구현 — TabHostWindowController가 active VC로 forward.
 //   - Sidebar toggle(`toggleDocumentSidebar:`) — divider 0 ↔ 저장된 width 애니메이션.
 //   - ⌘G 페이지 점프 시트(SwiftUI hosting).
-//   - Export PDF (PDFFlattenExporter).
+//   - Flattened PDF export (PDFFlattenExporter).
 final class DocumentViewController: NSViewController, SidebarViewControllerDelegate {
 
-    private weak var document: NoteDocument?
+    private weak var document: PDFInkDocument?
     private let toolController = ToolController()
     private var scrollView: NSScrollView!
     private var stripView: SpreadStripView!
@@ -39,7 +39,7 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
     private var jumpHost: NSHostingController<PageJumpView>?
     private var zoomController: ZoomController!
 
-    init(document: NoteDocument) {
+    init(document: PDFInkDocument) {
         self.document = document
         super.init(nibName: nil, bundle: nil)
     }
@@ -118,11 +118,11 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
         let onChange: () -> Void = { [weak doc] in
             doc?.updateChangeCount(.changeDone)
         }
-        let pagesPerSpread = doc.manifest.effectivePagesPerSpread
+        let pagesPerSpread = doc.effectivePagesPerSpread
         stripView.pagesPerSpread = pagesPerSpread
         stripView.setSpreads(
             Spread.pair(pdf,
-                        coverIsSinglePage: doc.manifest.coverIsSinglePage,
+                        coverIsSinglePage: doc.coverIsSinglePage,
                         pagesPerSpread: pagesPerSpread),
             document: doc,
             toolController: toolController,
@@ -216,7 +216,7 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         let baseName = doc.displayName ?? "Note"
-        panel.nameFieldStringValue = baseName + ".pdf"
+        panel.nameFieldStringValue = baseName + "-flattened.pdf"
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }

@@ -1,9 +1,9 @@
 import Cocoa
 import PDFKit
 
-// 노트의 PDF + stroke를 합쳐 새 PDF로 export.
-// 페이지마다 새 PDFContext를 만들고 원본 PDF 페이지를 그린 뒤 stroke를 위에 그린다.
-// PDFKit의 ink annotation은 사용하지 않는다 — 뷰어 호환성·렌더 일관성이 더 중요.
+// PDF와 편집 중인 stroke를 한 장짜리 그래픽 결과로 굽는 export.
+// 페이지마다 새 PDFContext를 만들고 원본 PDF 페이지를 그린 뒤 stroke path를 직접 그린다.
+// 저장용 PDFAnnotation(.ink)과 달리 결과 파일에는 편집 가능한 앱 stroke payload가 남지 않는다.
 enum PDFFlattenExporter {
 
     enum ExportError: LocalizedError {
@@ -20,7 +20,7 @@ enum PDFFlattenExporter {
         }
     }
 
-    static func export(document: NoteDocument, to url: URL) throws {
+    static func export(document: PDFInkDocument, to url: URL) throws {
         guard let srcDoc = document.pdfDocument else { throw ExportError.noPDF }
         let outDoc = PDFDocument()
 

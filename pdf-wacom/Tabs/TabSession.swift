@@ -23,7 +23,7 @@ enum TabSession {
         var entries: [Entry]
     }
 
-    static func save(documents: [NoteDocument]) {
+    static func save(documents: [PDFInkDocument]) {
         guard let url = sessionURL else { return }
         let entries = documents.compactMap { doc -> Entry? in
             guard let u = doc.fileURL else { return nil }   // untitled는 복원 대상 아님

@@ -1,10 +1,10 @@
 import Cocoa
 
-// 단일 호스트 윈도우. 모든 NoteDocument의 viewController를 호스팅하고,
+// 단일 호스트 윈도우. 모든 PDFInkDocument의 viewController를 호스팅하고,
 // 활성 탭의 viewController만 컨테이너에 마운트한다.
 //
 // NSDocument 통합 방식:
-// - 각 NoteDocument.makeWindowControllers는 host.add(document:) 호출만 하고
+// - 각 PDFInkDocument.makeWindowControllers는 host.add(document:) 호출만 하고
 //   자체 NSWindowController는 만들지 않는다(windowControllers는 비어 있음).
 // - 그래서 NSDocument.close 시 windowControllers loop가 아무 것도 닫지 않아
 //   다른 탭에 영향 없음.
@@ -15,8 +15,8 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
 
     static let shared: TabHostWindowController = makeShared()
 
-    private(set) var documents: [NoteDocument] = []
-    private(set) var activeDocument: NoteDocument?
+    private(set) var documents: [PDFInkDocument] = []
+    private(set) var activeDocument: PDFInkDocument?
     private var viewControllersByDocID: [ObjectIdentifier: DocumentViewController] = [:]
 
     private var hostContentVC: HostContentViewController!
@@ -83,7 +83,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         // 윈도우 close 처리 (모든 탭 prompt) + 풀스크린 hook
         window.delegate = self
         documentEditStateObserver = NotificationCenter.default.addObserver(
-            forName: NoteDocument.editStateDidChangeNotification,
+            forName: PDFInkDocument.editStateDidChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] note in
@@ -92,7 +92,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     }
 
     private func documentEditStateDidChange(_ note: Notification) {
-        guard let document = note.object as? NoteDocument else { return }
+        guard let document = note.object as? PDFInkDocument else { return }
         guard documents.contains(where: { $0 === document }) else { return }
         tabBarView.reload()
     }
@@ -152,7 +152,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
 
     // MARK: - Tab management
 
-    func add(document: NoteDocument) {
+    func add(document: PDFInkDocument) {
         guard !documents.contains(where: { $0 === document }) else {
             activate(document: document)
             return
@@ -165,7 +165,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         TabSession.save(documents: documents)
     }
 
-    func activate(document: NoteDocument) {
+    func activate(document: PDFInkDocument) {
         guard documents.contains(where: { $0 === document }) else { return }
         activeDocument = document
         self.document = document
@@ -175,7 +175,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         tabBarView.reload()
     }
 
-    private func viewController(for document: NoteDocument) -> DocumentViewController {
+    private func viewController(for document: PDFInkDocument) -> DocumentViewController {
         if let vc = viewControllersByDocID[ObjectIdentifier(document)] {
             return vc
         }
@@ -184,7 +184,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         return vc
     }
 
-    func remove(document: NoteDocument) {
+    func remove(document: PDFInkDocument) {
         guard let idx = documents.firstIndex(where: { $0 === document }) else { return }
         documents.remove(at: idx)
         viewControllersByDocID.removeValue(forKey: ObjectIdentifier(document))
@@ -216,7 +216,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     // MARK: - Menu actions
 
     @IBAction func newDocumentTab(_ sender: Any?) {
-        // ⌘T → Open dialog로 PDF/.pdfnote 선택 → 새 탭으로 추가
+        // ⌘T → Open dialog로 PDF 선택 → 새 탭으로 추가
         NSDocumentController.shared.openDocument(nil)
     }
 
@@ -230,7 +230,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     }
 
     @objc private func document(_ doc: NSDocument, shouldClose: Bool, contextInfo: UnsafeMutableRawPointer?) {
-        guard shouldClose, let nd = doc as? NoteDocument else { return }
+        guard shouldClose, let nd = doc as? PDFInkDocument else { return }
         remove(document: nd)
         nd.close()
     }
@@ -329,7 +329,7 @@ extension TabHostWindowController: NSWindowDelegate {
 
     @objc private func documentInChainShouldClose(_ doc: NSDocument, shouldClose: Bool, contextInfo: UnsafeMutableRawPointer?) {
         if !shouldClose { return }   // 사용자가 취소
-        guard let nd = doc as? NoteDocument else { return }
+        guard let nd = doc as? PDFInkDocument else { return }
         remove(document: nd)
         nd.close()
         if !documents.isEmpty {

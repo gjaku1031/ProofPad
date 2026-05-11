@@ -66,7 +66,7 @@ final class SpreadView: NSView {
     override var isFlipped: Bool { true }
 
     init(spread: Spread,
-         document: NoteDocument,
+         document: PDFInkDocument,
          toolController: ToolController,
          onChange: @escaping () -> Void) {
         self.leftPageView = spread.leftPage.map { page in

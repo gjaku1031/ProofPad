@@ -13,7 +13,7 @@ import PDFKit
 //
 // === pagesPerSpread ===
 //   1: 한 페이지가 spread 폭 전체 차지 (한 페이지 모드).
-//   2: 좌우 두 페이지가 펼침면으로 (책 모드). 표지 단독 옵션은 manifest.coverIsSinglePage.
+//   2: 좌우 두 페이지가 펼침면으로 (책 모드). 표지 단독 옵션은 PDFInkDocument.coverIsSinglePage.
 //
 // === 스크롤 좌표 ===
 //   SpreadView × N를 위에서 아래로 쌓는다 (y=topMargin부터 spreadGap 간격).
@@ -85,7 +85,7 @@ final class SpreadStripView: NSView {
     }
 
     func setSpreads(_ list: [Spread],
-                    document: NoteDocument,
+                    document: PDFInkDocument,
                     toolController: ToolController,
                     onChange: @escaping () -> Void) {
         spreadViews.forEach { $0.view.removeFromSuperview() }

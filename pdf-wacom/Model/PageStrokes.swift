@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - PageStrokes
 //
-// 한 PDF 페이지의 stroke들. 디스크의 strokes/page-XXXX.bin 한 파일에 대응.
+// 한 PDF 페이지의 편집 가능한 ink stroke들.
 //
 // === 인바리언트 ===
 //   - strokes는 추가 순서 = 그리기 순서. 인덱스는 안정적이지 않음 (remove 시 shift됨) — 식별은 stroke.id.
@@ -44,10 +44,10 @@ final class PageStrokes {
         if let actionName {
             undoManager?.setActionName(actionName)
         }
-        weak var weakUndoManager = undoManager
+        let undoManagerBox = WeakUndoManagerBox(undoManager)
         undoManager?.registerUndo(withTarget: self) { page in
             page.removeRecordingUndo(stroke,
-                                     undoManager: weakUndoManager,
+                                     undoManager: undoManagerBox.value,
                                      actionName: actionName,
                                      notify: true,
                                      onChange: onChange)
@@ -65,10 +65,10 @@ final class PageStrokes {
         if let actionName {
             undoManager?.setActionName(actionName)
         }
-        weak var weakUndoManager = undoManager
+        let undoManagerBox = WeakUndoManagerBox(undoManager)
         undoManager?.registerUndo(withTarget: self) { page in
             page.addRecordingUndo(removed,
-                                  undoManager: weakUndoManager,
+                                  undoManager: undoManagerBox.value,
                                   actionName: actionName,
                                   notify: true,
                                   onChange: onChange)
@@ -79,5 +79,13 @@ final class PageStrokes {
 
     private func postDidChange() {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+}
+
+private final class WeakUndoManagerBox {
+    weak var value: UndoManager?
+
+    init(_ value: UndoManager?) {
+        self.value = value
     }
 }

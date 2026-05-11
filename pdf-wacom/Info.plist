@@ -10,23 +10,9 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>pdf-wacom Note</string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.ken.pdfnote</string>
-			</array>
-			<key>LSTypeIsPackage</key>
-			<true/>
-			<key>NSDocumentClass</key>
-			<string>NoteDocument</string>
-		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
 			<string>PDF Document</string>
 			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
+			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
@@ -34,7 +20,7 @@
 				<string>com.adobe.pdf</string>
 			</array>
 			<key>NSDocumentClass</key>
-			<string>NoteDocument</string>
+			<string>PDFInkDocument</string>
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
@@ -57,25 +43,5 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>com.apple.package</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>pdf-wacom Note</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.ken.pdfnote</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>pdfnote</string>
-				</array>
-			</dict>
-		</dict>
-	</array>
 </dict>
 </plist>

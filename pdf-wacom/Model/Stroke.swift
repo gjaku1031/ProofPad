@@ -10,8 +10,8 @@ import Cocoa
 //   - bbox는 width/2 padding 포함 — Eraser hit-test가 stroke 두께를 고려할 수 있게.
 //   - bbox 계산이 append에 inline돼 있어서 매 append마다 O(1) 갱신. 별도 invalidate 필요 없음.
 //
-// === 직렬화 ===
-//   StrokeCodec이 binary로 인코드/디코드. magic "PNST" + version + per-point (x, y, t).
+// === PDF 저장 ===
+//   PDFInkAnnotationCodec이 Stroke를 PDFAnnotation(.ink)으로 변환해 PDF 안에 저장한다.
 //
 // === Identity ===
 //   id는 UUID. PageStrokes에서 stroke 제거 / Undo 등록 시 키로 사용.

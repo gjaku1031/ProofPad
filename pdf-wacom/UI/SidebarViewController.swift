@@ -10,7 +10,7 @@ protocol SidebarViewControllerDelegate: AnyObject {
 final class SidebarViewController: NSViewController {
 
     weak var delegate: SidebarViewControllerDelegate?
-    weak var document: NoteDocument?
+    weak var document: PDFInkDocument?
 
     private var pageModeControl: NSSegmentedControl!
     private var coverCheckbox: NSButton!
@@ -19,7 +19,7 @@ final class SidebarViewController: NSViewController {
 
     private static let thumbItemID = NSUserInterfaceItemIdentifier("thumbItem")
 
-    init(document: NoteDocument) {
+    init(document: PDFInkDocument) {
         self.document = document
         super.init(nibName: nil, bundle: nil)
     }
@@ -42,7 +42,7 @@ final class SidebarViewController: NSViewController {
                                       trackingMode: .selectOne,
                                       target: self,
                                       action: #selector(pageModeChanged(_:)))
-        let currentMode = document?.manifest.effectivePagesPerSpread ?? 2
+        let currentMode = document?.effectivePagesPerSpread ?? 2
         mode.selectedSegment = currentMode == 1 ? 0 : 1
         mode.segmentStyle = .rounded
         mode.translatesAutoresizingMaskIntoConstraints = false
@@ -54,7 +54,7 @@ final class SidebarViewController: NSViewController {
                           target: self,
                           action: #selector(coverToggled(_:)))
         cb.font = .systemFont(ofSize: 12)
-        cb.state = (document?.manifest.coverIsSinglePage ?? false) ? .on : .off
+        cb.state = (document?.coverIsSinglePage ?? false) ? .on : .off
         cb.isEnabled = currentMode != 1
         cb.translatesAutoresizingMaskIntoConstraints = false
         v.addSubview(cb)

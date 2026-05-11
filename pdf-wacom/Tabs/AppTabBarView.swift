@@ -80,7 +80,7 @@ final class TabChipView: NSView {
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
 
-    init(document: NoteDocument, isActive: Bool) {
+    init(document: PDFInkDocument, isActive: Bool) {
         self.isActive = isActive
         self.isDirty = document.isDocumentEdited
         super.init(frame: .zero)
@@ -198,7 +198,7 @@ final class TabChipView: NSView {
 final class TabChipCloseDelegate: NSObject {
     static let shared = TabChipCloseDelegate()
     @objc func documentShouldClose(_ doc: NSDocument, shouldClose: Bool, contextInfo: UnsafeMutableRawPointer?) {
-        guard shouldClose, let nd = doc as? NoteDocument else { return }
+        guard shouldClose, let nd = doc as? PDFInkDocument else { return }
         TabHostWindowController.shared.remove(document: nd)
         nd.close()
     }
