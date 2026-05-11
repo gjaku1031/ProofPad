@@ -110,10 +110,6 @@ final class PenSettings {
         onChange?()
     }
 
-    func applyRecentColor(_ color: NSColor) {
-        setCurrentColor(color)
-    }
-
     private func pushRecentColor(_ color: ColorData) {
         recentColors.removeAll { $0.isClose(to: color) }
         recentColors.insert(color, at: 0)

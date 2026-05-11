@@ -20,7 +20,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     private var viewControllersByDocID: [ObjectIdentifier: DocumentViewController] = [:]
 
     private var hostContentVC: HostContentViewController!
-    private var tabBarView: AppTabBarView { hostContentVC.tabBarView }
+    private let tabBarView = AppTabBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 36))
     private var containerView: NSView { hostContentVC.containerView }
 
     private static func makeShared() -> TabHostWindowController {
@@ -53,8 +53,8 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         window.tabbingMode = .disallowed
 
         let host = HostContentViewController()
-        host.tabBarView.host = self
         self.hostContentVC = host
+        tabBarView.host = self
         window.contentViewController = host
 
         // NSToolbar
@@ -67,7 +67,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         // 풀스크린 .autoHideToolbar 모드에서 toolbar와 동일한 슬라이드 애니메이션으로
         // 동시에 자동 숨김/표시 됨 (시스템이 동기 처리, lag·desync 없음).
         let accessory = NSTitlebarAccessoryViewController()
-        accessory.view = host.tabBarView
+        accessory.view = tabBarView
         accessory.layoutAttribute = .bottom
         window.addTitlebarAccessoryViewController(accessory)
 

@@ -1,16 +1,14 @@
 import Cocoa
 
 // host 윈도우의 contentViewController. 활성 도큐먼트 컨테이너만 관리.
-// 탭바는 NSTitlebarAccessoryViewController로 toolbar 아래에 attach되므로
-// 여기서는 다루지 않는다. (풀스크린에서 toolbar와 자동 동기화 숨김/표시.)
+// 탭바는 TabHostWindowController가 직접 소유 → NSTitlebarAccessoryViewController로 부착.
+// (풀스크린에서 toolbar와 자동 동기화 숨김/표시.)
 final class HostContentViewController: NSViewController {
 
-    let tabBarView: AppTabBarView
     let containerView: NSView
     private weak var activeChild: NSViewController?
 
     init() {
-        self.tabBarView = AppTabBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 36))
         self.containerView = NSView(frame: .zero)
         super.init(nibName: nil, bundle: nil)
     }

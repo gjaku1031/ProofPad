@@ -234,21 +234,6 @@ final class NoteDocument: NSDocument {
         return FileWrapper(directoryWithFileWrappers: children)
     }
 
-    // MARK: - Helpers
-
-    private static func preferredInitialFrame(size: NSSize) -> NSRect {
-        let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) })
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
-        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        return NSRect(
-            x: visible.midX - size.width / 2,
-            y: visible.midY - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
-    }
 }
 
 private extension JSONEncoder {
