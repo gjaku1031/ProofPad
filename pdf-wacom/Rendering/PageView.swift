@@ -42,9 +42,9 @@ final class PageView: NSView {
         )
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.shadowOpacity = 0.18
-        layer?.shadowRadius = 6
-        layer?.shadowOffset = .zero
+        // 그림자 제거 — shadowPath로 cost는 낮춰도 metalLiveLayer가 매 frame present될 때마다
+        // 부모 PageView를 재합성하게 만들어 cursor display latency 누적의 원인. 페이지 경계가
+        // 필요하면 layer.border나 PageBackgroundView 자체에 1px 회색 stroke로 대체 가능.
         addSubview(backgroundView)
         addSubview(canvasView)
         canvasView.onChange = onChange
@@ -56,9 +56,5 @@ final class PageView: NSView {
         super.layout()
         backgroundView.frame = bounds
         canvasView.frame = bounds
-        // shadowPath 없으면 layer alpha mask로부터 그림자를 매 프레임 동적 계산한다 (큰 비용).
-        // sublayer(metalLiveLayer)가 present할 때마다 그림자 재계산되어 펜 입력 lag 유발 →
-        // 명시적 path 부여로 fixed shadow.
-        layer?.shadowPath = CGPath(rect: bounds, transform: nil)
     }
 }
