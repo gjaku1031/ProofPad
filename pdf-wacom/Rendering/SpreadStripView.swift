@@ -29,11 +29,11 @@ final class SpreadStripView: NSView {
 
     private(set) var spreadViews: [(spread: Spread, view: SpreadView)] = []
 
-    var spreadGap: CGFloat = 24 { didSet { needsLayout = true } }
-    var pageGap: CGFloat = 8 { didSet { needsLayout = true } }
-    var horizontalMargin: CGFloat = 16 { didSet { needsLayout = true } }
-    var topMargin: CGFloat = 16 { didSet { needsLayout = true } }
-    var bottomMargin: CGFloat = 16 { didSet { needsLayout = true } }
+    var spreadGap: CGFloat = 36 { didSet { needsLayout = true } }
+    var pageGap: CGFloat = 12 { didSet { needsLayout = true } }
+    var horizontalMargin: CGFloat = 32 { didSet { needsLayout = true } }
+    var topMargin: CGFloat = 32 { didSet { needsLayout = true } }
+    var bottomMargin: CGFloat = 32 { didSet { needsLayout = true } }
 
     var zoomMode: ZoomMode = .fitWidth {
         didSet {

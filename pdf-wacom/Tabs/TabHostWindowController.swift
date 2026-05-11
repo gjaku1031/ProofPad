@@ -20,7 +20,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     private var viewControllersByDocID: [ObjectIdentifier: DocumentViewController] = [:]
 
     private var hostContentVC: HostContentViewController!
-    private let tabBarView = AppTabBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 36))
+    private let tabBarView = AppTabBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 40))
     private var containerView: NSView { hostContentVC.containerView }
 
     private static func makeShared() -> TabHostWindowController {
@@ -41,6 +41,8 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
             backing: .buffered, defer: false
         )
         window.title = "pdf-wacom"
+        // 탭 chip에 이미 문서명이 있어 title 텍스트는 중복. 깔끔하게 숨김.
+        window.titleVisibility = .hidden
         window.setFrameAutosaveName("HostWindow")
         let wc = TabHostWindowController(window: window)
         wc.setupContent()

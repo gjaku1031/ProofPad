@@ -72,13 +72,17 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
 
         // Content area (scrollView + stripView)
         let contentArea = NSView()
+        contentArea.wantsLayer = true
+        // underPageBackgroundColor — Apple의 semantic color "페이지가 떠 있는 배경". 다크모드 자동 대응.
+        contentArea.layer?.backgroundColor = NSColor.underPageBackgroundColor.cgColor
+
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.borderType = .noBorder
-        scroll.drawsBackground = false
-        scroll.backgroundColor = NSColor.windowBackgroundColor
+        scroll.drawsBackground = true
+        scroll.backgroundColor = NSColor.underPageBackgroundColor
 
         let strip = SpreadStripView()
         strip.frame = NSRect(x: 0, y: 0, width: 800, height: 100)

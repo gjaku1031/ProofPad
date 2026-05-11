@@ -31,10 +31,10 @@ final class SidebarViewController: NSViewController {
         v.wantsLayer = true
         v.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        // 페이지 보기 모드 — 한 페이지 / 두 페이지
-        let modeLabel = NSTextField(labelWithString: "페이지 보기")
-        modeLabel.font = .systemFont(ofSize: 11)
-        modeLabel.textColor = .secondaryLabelColor
+        // 섹션 헤더 — 작은 caps small, secondary label color로 시각 위계 표현.
+        let modeLabel = NSTextField(labelWithString: "PAGE LAYOUT")
+        modeLabel.font = .systemFont(ofSize: 10, weight: .semibold)
+        modeLabel.textColor = .tertiaryLabelColor
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
         v.addSubview(modeLabel)
 
@@ -53,11 +53,19 @@ final class SidebarViewController: NSViewController {
         let cb = NSButton(checkboxWithTitle: "표지를 단독 페이지로",
                           target: self,
                           action: #selector(coverToggled(_:)))
+        cb.font = .systemFont(ofSize: 12)
         cb.state = (document?.manifest.coverIsSinglePage ?? false) ? .on : .off
         cb.isEnabled = currentMode != 1
         cb.translatesAutoresizingMaskIntoConstraints = false
         v.addSubview(cb)
         self.coverCheckbox = cb
+
+        // PAGES 섹션 헤더
+        let pagesLabel = NSTextField(labelWithString: "PAGES")
+        pagesLabel.font = .systemFont(ofSize: 10, weight: .semibold)
+        pagesLabel.textColor = .tertiaryLabelColor
+        pagesLabel.translatesAutoresizingMaskIntoConstraints = false
+        v.addSubview(pagesLabel)
 
         let sep = NSBox()
         sep.boxType = .separator
@@ -95,26 +103,30 @@ final class SidebarViewController: NSViewController {
         self.collectionView = cv
 
         NSLayoutConstraint.activate([
-            modeLabel.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12),
-            modeLabel.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
-            modeLabel.topAnchor.constraint(equalTo: v.topAnchor, constant: 10),
+            modeLabel.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 16),
+            modeLabel.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -16),
+            modeLabel.topAnchor.constraint(equalTo: v.topAnchor, constant: 14),
 
-            mode.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12),
-            mode.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
-            mode.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 4),
+            mode.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 16),
+            mode.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -16),
+            mode.topAnchor.constraint(equalTo: modeLabel.bottomAnchor, constant: 6),
 
-            cb.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12),
-            cb.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
+            cb.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 16),
+            cb.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -16),
             cb.topAnchor.constraint(equalTo: mode.bottomAnchor, constant: 10),
 
-            sep.leadingAnchor.constraint(equalTo: v.leadingAnchor),
-            sep.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            sep.topAnchor.constraint(equalTo: cb.bottomAnchor, constant: 10),
+            sep.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 12),
+            sep.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -12),
+            sep.topAnchor.constraint(equalTo: cb.bottomAnchor, constant: 14),
             sep.heightAnchor.constraint(equalToConstant: 1),
+
+            pagesLabel.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 16),
+            pagesLabel.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -16),
+            pagesLabel.topAnchor.constraint(equalTo: sep.bottomAnchor, constant: 12),
 
             scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: sep.bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: pagesLabel.bottomAnchor, constant: 6),
             scroll.bottomAnchor.constraint(equalTo: v.bottomAnchor),
         ])
 
@@ -181,11 +193,14 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
         imageContainer.translatesAutoresizingMaskIntoConstraints = false
         imageContainer.wantsLayer = true
         imageContainer.layer?.backgroundColor = NSColor.white.cgColor
-        imageContainer.layer?.borderColor = NSColor.separatorColor.cgColor
+        imageContainer.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.6).cgColor
         imageContainer.layer?.borderWidth = 0.5
-        imageContainer.layer?.cornerRadius = 2
-        imageContainer.layer?.shadowOpacity = 0.1
-        imageContainer.layer?.shadowRadius = 2
+        imageContainer.layer?.cornerRadius = 3
+        // 더 명확한 elevation으로 페이지 카드 느낌. shadowPath은 frame 고정이라 첫 load 후 set.
+        imageContainer.layer?.shadowOpacity = 0.22
+        imageContainer.layer?.shadowRadius = 5
+        imageContainer.layer?.shadowOffset = NSSize(width: 0, height: -1.5)
+        imageContainer.layer?.shadowColor = NSColor.black.cgColor
         v.addSubview(imageContainer)
 
         thumbImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -193,13 +208,13 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
         imageContainer.addSubview(thumbImageView)
 
         pageLabel.translatesAutoresizingMaskIntoConstraints = false
-        pageLabel.font = .systemFont(ofSize: 11)
+        pageLabel.font = .systemFont(ofSize: 11, weight: .medium)
         pageLabel.textColor = .secondaryLabelColor
         pageLabel.alignment = .center
         v.addSubview(pageLabel)
 
         NSLayoutConstraint.activate([
-            imageContainer.topAnchor.constraint(equalTo: v.topAnchor, constant: 4),
+            imageContainer.topAnchor.constraint(equalTo: v.topAnchor, constant: 6),
             imageContainer.centerXAnchor.constraint(equalTo: v.centerXAnchor),
             imageContainer.widthAnchor.constraint(equalToConstant: 100),
             imageContainer.heightAnchor.constraint(equalToConstant: 120),
@@ -209,12 +224,21 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
             thumbImageView.trailingAnchor.constraint(equalTo: imageContainer.trailingAnchor),
             thumbImageView.bottomAnchor.constraint(equalTo: imageContainer.bottomAnchor),
 
-            pageLabel.topAnchor.constraint(equalTo: imageContainer.bottomAnchor, constant: 4),
+            pageLabel.topAnchor.constraint(equalTo: imageContainer.bottomAnchor, constant: 6),
             pageLabel.centerXAnchor.constraint(equalTo: v.centerXAnchor),
             pageLabel.bottomAnchor.constraint(lessThanOrEqualTo: v.bottomAnchor, constant: -2),
         ])
 
         self.view = v
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        // shadowPath 갱신 — 컨테이너 크기는 고정이지만 첫 layout 후 안전 set.
+        imageContainer.layer?.shadowPath = CGPath(
+            rect: imageContainer.bounds,
+            transform: nil
+        )
     }
 
     func configure(page: PDFPage, pageIndex: Int) {

@@ -58,11 +58,20 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         let item = NSToolbarItem(itemIdentifier: ItemID.tools)
         item.label = "Tool"
         item.paletteLabel = "Tool"
-        let control = NSSegmentedControl(labels: ["P1", "P2", "P3", "⌫ Eraser"],
+        // label은 비워두고 image로 통일 — pen 3개는 color swatch, 4번째는 SF Symbol eraser.
+        let control = NSSegmentedControl(labels: ["", "", "", ""],
                                          trackingMode: .selectOne,
                                          target: self,
                                          action: #selector(toolsChanged(_:)))
         control.segmentStyle = .texturedRounded
+        if let eraserImg = NSImage(systemSymbolName: "eraser",
+                                    accessibilityDescription: "Eraser") {
+            control.setImage(eraserImg, forSegment: 3)
+        }
+        control.setWidth(36, forSegment: 0)
+        control.setWidth(36, forSegment: 1)
+        control.setWidth(36, forSegment: 2)
+        control.setWidth(44, forSegment: 3)
         control.translatesAutoresizingMaskIntoConstraints = false
         item.view = control
         self.toolsControl = control
@@ -109,13 +118,16 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     }
 
     private static func swatchImage(color: NSColor) -> NSImage {
-        let size = NSSize(width: 12, height: 12)
+        // 14×14 단색 원 + 미세 1pt 어두운 윤곽 — 다크모드에서도 자기 색이 잘 보이게.
+        let size = NSSize(width: 14, height: 14)
         let img = NSImage(size: size)
         img.lockFocus()
+        let inset: CGFloat = 0.5
+        let rect = NSRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
         color.setFill()
-        let path = NSBezierPath(ovalIn: NSRect(origin: .zero, size: size))
+        let path = NSBezierPath(ovalIn: rect)
         path.fill()
-        NSColor.black.withAlphaComponent(0.3).setStroke()
+        NSColor.black.withAlphaComponent(0.25).setStroke()
         path.lineWidth = 1
         path.stroke()
         img.unlockFocus()

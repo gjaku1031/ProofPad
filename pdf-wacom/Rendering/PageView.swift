@@ -3,16 +3,18 @@ import PDFKit
 
 // MARK: - PageView
 //
-// PDF 페이지 1장 단위의 컨테이너 NSView. 배경(PDF raster) 위에 펜 캔버스 오버레이.
+// PDF 페이지 1장 단위의 컨테이너 NSView. PDF + stroke를 그리는 자식 StrokeCanvasView를 호스팅.
 //
 // 자식:
-//   PDFPageBackgroundView   — PDF를 백그라운드 큐에서 raster, 결과를 layer.contents에 set
-//   StrokeCanvasView        — 펜 입력 + 렌더 (Metal live + CAShapeLayer baked)
+//   PDFPageBackgroundView   — PDF raster trigger 전용 (isHidden=true).
+//                             결과 CGImage를 콜백으로 StrokeCanvasView에 넘김.
+//   StrokeCanvasView        — opaque Metal layer (PDF + stroke 단일 pass)
 //
 // 시각:
-//   layer.shadowOpacity / shadowRadius로 페이지 외곽 그림자.
-//   ⚠️ shadowPath 필수 — 안 주면 매 프레임 alpha mask로부터 그림자 동적 계산해서
-//      펜 입력 lag의 주된 원인이 된다. layout()에서 bounds rect로 설정.
+//   layer.shadow* — 페이지 외곽 subtle drop shadow. 종이가 회색 배경에서 "떠있다"는 인상.
+//   ⚠️ shadowPath 필수 — 안 주면 매 프레임 alpha mask로부터 그림자 동적 계산.
+//      layout()에서 bounds rect로 설정해 perf 비용 0에 가깝게.
+//   metalLiveLayer가 opaque로 PageView bounds 전체를 덮으므로 그림자는 EDGE에만 보임.
 //
 // 좌표:
 //   isFlipped = true — 부모(SpreadView)와 자연스럽게 정렬되도록.
@@ -49,6 +51,14 @@ final class PageView: NSView {
         backgroundView.onImage = { [weak canvasView = canvasView] image in
             canvasView?.setPDFImage(image)
         }
+
+        // 페이지 외곽 그림자 — 회색 배경에서 종이가 살짝 떠 보이는 시각 효과.
+        // shadowPath는 layout()에서 갱신 — 매 frame compositor 비용 회피.
+        layer?.shadowOpacity = 0.18
+        layer?.shadowRadius = 10
+        layer?.shadowOffset = NSSize(width: 0, height: -3)
+        layer?.shadowColor = NSColor.black.cgColor
+
         addSubview(backgroundView)
         addSubview(canvasView)
         canvasView.onChange = onChange
@@ -60,5 +70,7 @@ final class PageView: NSView {
         super.layout()
         backgroundView.frame = bounds
         canvasView.frame = bounds
+        // bounds 기반 shadow 정적 path — perf 핵심. 매 frame alpha-mask shadow 계산 회피.
+        layer?.shadowPath = CGPath(rect: bounds, transform: nil)
     }
 }
