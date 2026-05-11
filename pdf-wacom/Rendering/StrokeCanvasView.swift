@@ -47,6 +47,20 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     private var activeTool: Tool?
     private var lastLaidOutSize: CGSize = .zero
     private var pageStrokesObserver: NSObjectProtocol?
+    var isRenderingEnabled: Bool = true {
+        didSet {
+            guard isRenderingEnabled != oldValue else { return }
+            if isRenderingEnabled {
+                lastLaidOutSize = .zero
+                needsLayout = true
+                updateMetalDrawableSize()
+                rebuildBakedFromModel()
+                presentNow()
+            } else {
+                presentScheduled = false
+            }
+        }
+    }
 
     // MARK: - Frame pacing
     //
@@ -180,7 +194,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     }
 
     private func pageStrokesDidChange() {
-        guard window != nil else { return }
+        guard window != nil, isRenderingEnabled else { return }
         rebuildBakedFromModel()
         presentNow()
     }
@@ -192,6 +206,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         lastLaidOutSize = size
 
         metalLiveLayer.frame = bounds
+        guard isRenderingEnabled else { return }
         updateMetalDrawableSize()
         rebuildBakedFromModel()
         if inProgressStroke != nil {
@@ -429,6 +444,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
 
     /// One-shot 액션용. 즉시 present.
     private func presentNow() {
+        guard isRenderingEnabled, window != nil, bounds.width > 0, bounds.height > 0 else { return }
         presentScheduled = false
         metalRenderer?.draw(in: metalLiveLayer, viewportPoints: bounds.size)
     }

@@ -66,6 +66,11 @@ final class PageView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    func setRenderingEnabled(_ enabled: Bool) {
+        backgroundView.isRasteringEnabled = enabled
+        canvasView.isRenderingEnabled = enabled
+    }
+
     override func layout() {
         super.layout()
         backgroundView.frame = bounds

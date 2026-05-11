@@ -14,11 +14,11 @@ final class ZoomController {
     func zoomOut() { stripView?.zoomBy(factor: 1.0 / 1.25) }
 
     func setMode(_ mode: SpreadStripView.ZoomMode) {
-        stripView?.zoomMode = mode
+        stripView?.setZoomModePreservingViewport(mode)
     }
 
     func actualSize() {
-        stripView?.zoomMode = .custom(1.0)
+        stripView?.setZoomModePreservingViewport(.custom(1.0))
     }
 
     func fitWidth() { setMode(.fitWidth) }

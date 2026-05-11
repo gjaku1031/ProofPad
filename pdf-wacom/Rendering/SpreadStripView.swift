@@ -28,6 +28,15 @@ final class SpreadStripView: NSView {
     }
 
     private(set) var spreadViews: [(spread: Spread, view: SpreadView)] = []
+    private var clipBoundsObserver: NSObjectProtocol?
+    private weak var observedClipView: NSClipView?
+
+    private struct ViewportAnchor {
+        let spreadIndex: Int
+        let relativeX: CGFloat
+        let relativeY: CGFloat
+        let viewportOffset: NSPoint
+    }
 
     var spreadGap: CGFloat = 36 { didSet { needsLayout = true } }
     var pageGap: CGFloat = 12 { didSet { needsLayout = true } }
@@ -80,8 +89,46 @@ final class SpreadStripView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    deinit {
+        removeClipBoundsObserver()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        configureClipBoundsObserver()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureClipBoundsObserver()
+        updateRenderingForVisibleRect()
+    }
+
     private func applyAutoresizingForZoomMode() {
         autoresizingMask = isFitWidth ? [.width] : []
+    }
+
+    private func configureClipBoundsObserver() {
+        guard let clipView = enclosingScrollView?.contentView else { return }
+        guard observedClipView !== clipView else { return }
+        removeClipBoundsObserver()
+        observedClipView = clipView
+        clipView.postsBoundsChangedNotifications = true
+        clipBoundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clipView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateRenderingForVisibleRect()
+        }
+    }
+
+    private func removeClipBoundsObserver() {
+        if let clipBoundsObserver {
+            NotificationCenter.default.removeObserver(clipBoundsObserver)
+        }
+        clipBoundsObserver = nil
+        observedClipView = nil
     }
 
     func setSpreads(_ list: [Spread],
@@ -99,6 +146,7 @@ final class SpreadStripView: NSView {
             return (spread, v)
         }
         needsLayout = true
+        updateRenderingForVisibleRect()
     }
 
     /// 다음 펼침면으로 (zoom 비율 유지).
@@ -228,6 +276,7 @@ final class SpreadStripView: NSView {
         if abs(frame.width - docWidth) > 0.5 || abs(frame.height - totalHeight) > 0.5 {
             setFrameSize(NSSize(width: docWidth, height: totalHeight))
         }
+        updateRenderingForVisibleRect()
     }
 
     // MARK: - Pinch zoom
@@ -237,7 +286,7 @@ final class SpreadStripView: NSView {
         let currentScale = currentEffectiveScale()
         let newScale = (currentScale * (1 + event.magnification))
             .clampedTo(min: 0.25, max: 8.0)
-        zoomMode = .custom(newScale)
+        setZoomMode(.custom(newScale), preservingEvent: event)
     }
 
     /// ⌘ + scroll wheel = zoom. 일반 scroll은 NSScrollView 동작.
@@ -257,7 +306,7 @@ final class SpreadStripView: NSView {
             }
             let newScale = (currentEffectiveScale() * (1.0 + step))
                 .clampedTo(min: 0.25, max: 8.0)
-            zoomMode = .custom(newScale)
+            setZoomMode(.custom(newScale), preservingEvent: event)
             return
         }
         super.scrollWheel(with: event)
@@ -275,7 +324,120 @@ final class SpreadStripView: NSView {
     /// 외부(ZoomController)에서 step 줌인/아웃 시 현재 effective scale 기반으로 scale 변경.
     func zoomBy(factor: CGFloat) {
         let s = (currentEffectiveScale() * factor).clampedTo(min: 0.25, max: 8.0)
-        zoomMode = .custom(s)
+        setZoomModePreservingViewport(.custom(s))
+    }
+
+    func setZoomModePreservingViewport(_ mode: ZoomMode) {
+        setZoomMode(mode, preservingEvent: nil)
+    }
+
+    private func setZoomMode(_ mode: ZoomMode, preservingEvent event: NSEvent?) {
+        let anchor = makeViewportAnchor(event: event)
+        zoomMode = mode
+        layoutSubtreeIfNeeded()
+        restoreViewportAnchor(anchor)
+        updateRenderingForVisibleRect()
+    }
+
+    private func makeViewportAnchor(event: NSEvent?) -> ViewportAnchor? {
+        guard let scroll = enclosingScrollView else { return nil }
+        let clipBounds = scroll.contentView.bounds
+        let documentPoint: NSPoint
+        if let event {
+            let eventPoint = convert(event.locationInWindow, from: nil)
+            documentPoint = bounds.contains(eventPoint)
+                ? eventPoint
+                : NSPoint(x: clipBounds.midX, y: clipBounds.midY)
+        } else {
+            documentPoint = NSPoint(x: clipBounds.midX, y: clipBounds.midY)
+        }
+        guard let spreadIndex = spreadIndex(anchoring: documentPoint) else { return nil }
+        let spreadFrame = spreadViews[spreadIndex].view.frame
+        let relativeX = ((documentPoint.x - spreadFrame.minX) / max(spreadFrame.width, 1))
+            .clampedTo(min: 0, max: 1)
+        let relativeY = ((documentPoint.y - spreadFrame.minY) / max(spreadFrame.height, 1))
+            .clampedTo(min: 0, max: 1)
+        return ViewportAnchor(
+            spreadIndex: spreadIndex,
+            relativeX: relativeX,
+            relativeY: relativeY,
+            viewportOffset: NSPoint(x: documentPoint.x - clipBounds.minX,
+                                    y: documentPoint.y - clipBounds.minY)
+        )
+    }
+
+    private func spreadIndex(anchoring documentPoint: NSPoint) -> Int? {
+        guard !spreadViews.isEmpty else { return nil }
+        if let containing = spreadViews.firstIndex(where: { $0.view.frame.contains(documentPoint) }) {
+            return containing
+        }
+        var bestIndex = 0
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for (index, entry) in spreadViews.enumerated() {
+            let frame = entry.view.frame
+            let dx: CGFloat
+            if documentPoint.x < frame.minX {
+                dx = frame.minX - documentPoint.x
+            } else if documentPoint.x > frame.maxX {
+                dx = documentPoint.x - frame.maxX
+            } else {
+                dx = 0
+            }
+            let dy: CGFloat
+            if documentPoint.y < frame.minY {
+                dy = frame.minY - documentPoint.y
+            } else if documentPoint.y > frame.maxY {
+                dy = documentPoint.y - frame.maxY
+            } else {
+                dy = 0
+            }
+            let distance = dx * dx + dy * dy
+            if distance < bestDistance {
+                bestDistance = distance
+                bestIndex = index
+            }
+        }
+        return bestIndex
+    }
+
+    private func restoreViewportAnchor(_ anchor: ViewportAnchor?) {
+        guard let anchor,
+              spreadViews.indices.contains(anchor.spreadIndex),
+              let scroll = enclosingScrollView else { return }
+        let clipView = scroll.contentView
+        let spreadFrame = spreadViews[anchor.spreadIndex].view.frame
+        let anchoredDocumentPoint = NSPoint(
+            x: spreadFrame.minX + spreadFrame.width * anchor.relativeX,
+            y: spreadFrame.minY + spreadFrame.height * anchor.relativeY
+        )
+        let proposedOrigin = NSPoint(
+            x: anchoredDocumentPoint.x - anchor.viewportOffset.x,
+            y: anchoredDocumentPoint.y - anchor.viewportOffset.y
+        )
+        clipView.setBoundsOrigin(clampedScrollOrigin(proposedOrigin, clipSize: clipView.bounds.size))
+        scroll.reflectScrolledClipView(clipView)
+    }
+
+    private func clampedScrollOrigin(_ origin: NSPoint, clipSize: NSSize) -> NSPoint {
+        let maxX = max(0, bounds.width - clipSize.width)
+        let maxY = max(0, bounds.height - clipSize.height)
+        return NSPoint(
+            x: origin.x.clampedTo(min: 0, max: maxX),
+            y: origin.y.clampedTo(min: 0, max: maxY)
+        )
+    }
+
+    private func updateRenderingForVisibleRect() {
+        guard !spreadViews.isEmpty else { return }
+        guard let clipBounds = enclosingScrollView?.contentView.bounds else {
+            spreadViews.forEach { $0.view.setRenderingEnabled(true) }
+            return
+        }
+        let prefetchRect = clipBounds.insetBy(dx: -clipBounds.width * 0.5,
+                                              dy: -clipBounds.height * 1.5)
+        for entry in spreadViews {
+            entry.view.setRenderingEnabled(entry.view.frame.intersects(prefetchRect))
+        }
     }
 }
 

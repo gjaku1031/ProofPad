@@ -18,6 +18,16 @@ final class PDFPageBackgroundView: NSView {
     let page: PDFPage
     /// raster 완료 시 main에서 호출됨. StrokeCanvasView가 받아서 renderer에 업로드.
     var onImage: ((CGImage) -> Void)?
+    var isRasteringEnabled: Bool = true {
+        didSet {
+            guard isRasteringEnabled != oldValue else { return }
+            if isRasteringEnabled {
+                scheduleRasterIfNeeded(force: true)
+            } else {
+                inflightToken &+= 1
+            }
+        }
+    }
     private var cachedRasterPixelSize: CGSize = .zero
     private var cachedScale: CGFloat = 0
     private var inflightToken: UInt64 = 0
@@ -39,6 +49,15 @@ final class PDFPageBackgroundView: NSView {
         scheduleRasterIfNeeded()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            scheduleRasterIfNeeded(force: true)
+        } else {
+            inflightToken &+= 1
+        }
+    }
+
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         scheduleRasterIfNeeded(force: true)
@@ -50,6 +69,7 @@ final class PDFPageBackgroundView: NSView {
     }
 
     private func scheduleRasterIfNeeded(force: Bool = false) {
+        guard isRasteringEnabled, window != nil else { return }
         let scale = window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor
             ?? 2.0

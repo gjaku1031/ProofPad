@@ -96,6 +96,11 @@ final class SpreadView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    func setRenderingEnabled(_ enabled: Bool) {
+        leftPageView?.setRenderingEnabled(enabled)
+        rightPageView?.setRenderingEnabled(enabled)
+    }
+
     override func layout() {
         super.layout()
         if pagesAcross <= 1 {
