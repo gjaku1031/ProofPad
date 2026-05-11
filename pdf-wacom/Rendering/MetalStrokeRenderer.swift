@@ -116,6 +116,18 @@ final class MetalStrokeRenderer {
     private static let predictionStrength: Float = 1.0
     private var predictedTailVerts: [SIMD2<Float>] = []
 
+    // MARK: - Synthetic cursor
+    //
+    // 시스템 NSCursor를 숨겨도 사용자가 "펜 위치"를 시각으로 확인할 수 있도록 Metal pass 안에서
+    // 직접 작은 링을 그린다. WindowServer 커서 lag 0 — ink와 완전히 동기.
+    //
+    // 구현: 마지막 live point에 annulus (도넛). 외부 반지름 ~7pt, 두께 1.5pt.
+    // 색은 어두운 회색 50% 알파 — PDF 배경이 무엇이든 잘 보이게.
+    private static let cursorOuterRadius: Float = 7.0
+    private static let cursorThickness: Float = 1.5
+    private static let cursorSegments = 24
+    private var cursorVerts: [SIMD2<Float>] = []
+
     static var isAvailable: Bool { MTLCreateSystemDefaultDevice() != nil }
 
     // MARK: - Init
@@ -453,6 +465,28 @@ final class MetalStrokeRenderer {
                                                vertexCount: predictedCount)
                     }
                 }
+
+                // 4) synthetic cursor — 마지막 live point에 도넛 모양 표시 (시스템 커서 lag 0 대체).
+                let cursorCount = buildCursorRing()
+                if cursorCount > 0 {
+                    var cursorColor = SIMD4<Float>(0.15, 0.15, 0.18, 0.55)
+                    encoder.setFragmentBytes(
+                        &cursorColor,
+                        length: MemoryLayout<SIMD4<Float>>.size,
+                        index: 0
+                    )
+                    cursorVerts.withUnsafeBufferPointer { ptr in
+                        guard let base = ptr.baseAddress else { return }
+                        encoder.setVertexBytes(
+                            base,
+                            length: cursorCount * MemoryLayout<SIMD2<Float>>.stride,
+                            index: 0
+                        )
+                        encoder.drawPrimitives(type: .triangle,
+                                               vertexStart: 0,
+                                               vertexCount: cursorCount)
+                    }
+                }
             }
 
             encoder.endEncoding()
@@ -507,6 +541,34 @@ final class MetalStrokeRenderer {
             predictedTailVerts.append(predicted + SIMD2<Float>(cos(a1), sin(a1)) * liveHalfWidth)
         }
         return predictedTailVerts.count
+    }
+
+    /// 마지막 live point에 도넛(annulus) geometry를 cursorVerts에 쓰고 vertex count 반환.
+    /// 시스템 커서 hide 상태에서 사용자가 펜 위치를 시각으로 확인 가능하게.
+    private func buildCursorRing() -> Int {
+        cursorVerts.removeAll(keepingCapacity: true)
+        guard liveActive, let center = livePoints.last else { return 0 }
+        let R = Self.cursorOuterRadius
+        let r = R - Self.cursorThickness
+        let N = Self.cursorSegments
+        let twoPi: Float = .pi * 2
+        cursorVerts.reserveCapacity(N * 6)
+        for i in 0..<N {
+            let a0 = twoPi * Float(i) / Float(N)
+            let a1 = twoPi * Float(i + 1) / Float(N)
+            let oi  = center + SIMD2<Float>(cos(a0), sin(a0)) * R
+            let oi1 = center + SIMD2<Float>(cos(a1), sin(a1)) * R
+            let ii  = center + SIMD2<Float>(cos(a0), sin(a0)) * r
+            let ii1 = center + SIMD2<Float>(cos(a1), sin(a1)) * r
+            // 두 삼각형으로 한 segment 채움 (outer-inner-outer / outer-inner-inner)
+            cursorVerts.append(oi)
+            cursorVerts.append(ii)
+            cursorVerts.append(oi1)
+            cursorVerts.append(oi1)
+            cursorVerts.append(ii)
+            cursorVerts.append(ii1)
+        }
+        return cursorVerts.count
     }
 
     // MARK: - Geometry helpers

@@ -35,6 +35,21 @@ final class SpreadStripView: NSView {
     var topMargin: CGFloat = 32 { didSet { needsLayout = true } }
     var bottomMargin: CGFloat = 32 { didSet { needsLayout = true } }
 
+    /// Fit height/page 모드에서는 viewport 높이의 대부분을 페이지가 채우도록 vertical 여백을 줄인다.
+    /// (큰 topMargin/bottomMargin은 fit width / custom에서 호흡감을 주려는 용도라 fit 모드와 충돌.)
+    private var effectiveTopMargin: CGFloat {
+        switch zoomMode {
+        case .fitHeight, .fitPage: return 12
+        default: return topMargin
+        }
+    }
+    private var effectiveBottomMargin: CGFloat {
+        switch zoomMode {
+        case .fitHeight, .fitPage: return 12
+        default: return bottomMargin
+        }
+    }
+
     var zoomMode: ZoomMode = .fitWidth {
         didSet {
             applyAutoresizingForZoomMode()
@@ -174,18 +189,20 @@ final class SpreadStripView: NSView {
 
         // perPageWidth = 한 페이지 view 너비 (포인트). 단일/펼침에서 동일한 의미.
         let isSingle = pagesPerSpread <= 1
+        let topM = effectiveTopMargin
+        let botM = effectiveBottomMargin
         let perPageWidth: CGFloat
         switch zoomMode {
         case .fitWidth:
             let availWidth = max(0, clipSize.width - horizontalMargin * 2)
             perPageWidth = isSingle ? availWidth : max(0, (availWidth - pageGap) / 2)
         case .fitHeight:
-            let availHeight = max(0, clipSize.height - topMargin - bottomMargin)
+            let availHeight = max(0, clipSize.height - topM - botM)
             perPageWidth = availHeight / max(pageAspect, 0.001)
         case .fitPage:
             let availWidth = max(0, clipSize.width - horizontalMargin * 2)
             let fwPer = isSingle ? availWidth : max(0, (availWidth - pageGap) / 2)
-            let availHeight = max(0, clipSize.height - topMargin - bottomMargin)
+            let availHeight = max(0, clipSize.height - topM - botM)
             let fhPer = availHeight / max(pageAspect, 0.001)
             perPageWidth = min(fwPer, fhPer)
         case .custom(let scale):
@@ -200,13 +217,13 @@ final class SpreadStripView: NSView {
         let docWidth = max(clipSize.width, totalContentWidth)
         let xOffset = (docWidth - spreadWidth) / 2
 
-        var y: CGFloat = topMargin
+        var y: CGFloat = topM
         for (_, view) in spreadViews {
             view.pageGap = pageGap
             view.frame = NSRect(x: xOffset, y: y, width: spreadWidth, height: pageHeight)
             y += pageHeight + spreadGap
         }
-        let totalHeight = max(y - spreadGap + bottomMargin, 0)
+        let totalHeight = max(y - spreadGap + botM, 0)
 
         if abs(frame.width - docWidth) > 0.5 || abs(frame.height - totalHeight) > 0.5 {
             setFrameSize(NSSize(width: docWidth, height: totalHeight))

@@ -353,8 +353,9 @@ final class StrokeCanvasView: NSView {
 
     private func stopDisplayLink() {
         guard let link = displayLink else { return }
-        CVDisplayLinkStop(link)
+        // displayLink을 먼저 nil — 재진입/중복 stop 방어. CVDisplayLinkStop은 sync로 in-flight 콜백 완료까지 대기.
         self.displayLink = nil
+        CVDisplayLinkStop(link)
     }
 
     /// Main thread, dispatched from CVDisplayLink callback.
