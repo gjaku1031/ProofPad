@@ -9,8 +9,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         // 시스템 NSWindow tabbing(Show Tab Bar/Show All Tabs)을 막아 우리 자체 탭바와 충돌 회피.
         NSWindow.allowsAutomaticWindowTabbing = false
-        // mouse coalescing은 default(on) 유지. off로 두면 매 이벤트마다 nextDrawable()이 호출되며
-        // drawable 부족으로 메인 스레드가 block되어 오히려 글씨가 끊겨 보임.
+        // mouse coalescing OFF — 모든 pen sample을 받음. 빠른 curve(한글 받침·꺾임)에서
+        // 샘플 누락으로 stroke가 끊기거나 직선 점프해 글자 망가지는 것 방지.
+        // 안전: framesInFlight cap=1이라 매 이벤트마다 present 시도해도 GPU 쪽에서 자연 throttle.
+        NSEvent.isMouseCoalescingEnabled = false
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
