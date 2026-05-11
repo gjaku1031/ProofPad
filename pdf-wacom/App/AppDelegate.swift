@@ -3,7 +3,9 @@ import Cocoa
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var arrowKeyMonitor: Any?
+    private var spacePanMonitor: Any?
     private var proximityMonitor: Any?
+    private var resignActiveObserver: NSObjectProtocol?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenuBuilder.build()
@@ -19,8 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installApplicationIcon()
         NSApp.activate(ignoringOtherApps: true)
+        installSpacePanMonitor()
         installArrowKeyNavigation()
         installTabletProximityMonitor()
+        installKeyboardModeReset()
         DispatchQueue.main.async {
             self.restoreSessionOrPromptOpen()
         }
@@ -30,6 +34,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
               let icon = NSImage(contentsOf: iconURL) else { return }
         NSApp.applicationIconImage = icon
+    }
+
+    private func installSpacePanMonitor() {
+        spacePanMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+            guard event.keyCode == 49 else { return event } // Space
+            if event.type == .keyUp, KeyboardModeState.shared.isSpaceHeld {
+                KeyboardModeState.shared.setSpaceHeld(false)
+                return nil
+            }
+            let reservedModifiers = event.modifierFlags.intersection([.command, .option, .control])
+            guard reservedModifiers.isEmpty else { return event }
+            guard NSApp.keyWindow?.windowController is TabHostWindowController else { return event }
+            guard !Self.isTextInputFocused else { return event }
+
+            KeyboardModeState.shared.setSpaceHeld(true)
+            return nil
+        }
+    }
+
+    private static var isTextInputFocused: Bool {
+        let firstResponder = NSApp.keyWindow?.firstResponder
+        return firstResponder is NSText || firstResponder is NSTextView
+    }
+
+    private func installKeyboardModeReset() {
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: NSApp,
+            queue: .main
+        ) { _ in
+            KeyboardModeState.shared.setSpaceHeld(false)
+        }
     }
 
     /// Wacom 펜이 태블릿 근접 영역 진입/이탈 시 TabletEventRouter 상태 갱신.

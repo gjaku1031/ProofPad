@@ -20,6 +20,7 @@ final class AppTabBarView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -46,6 +47,9 @@ final class AppTabBarView: NSView {
                 )
                 _ = host  // capture
             }
+            chip.onDrop = { [weak self] document, windowPoint in
+                self?.drop(document: document, at: windowPoint)
+            }
             addSubview(chip)
             return chip
         }
@@ -68,18 +72,31 @@ final class AppTabBarView: NSView {
             x += chipWidth + chipSpacing
         }
     }
+
+    private func drop(document: PDFInkDocument, at windowPoint: NSPoint) {
+        let local = convert(windowPoint, from: nil)
+        let insertionIndex = chips.firstIndex { chip in
+            local.x < chip.frame.midX
+        } ?? chips.count
+        host?.moveTab(document: document, to: insertionIndex)
+    }
 }
 
 final class TabChipView: NSView {
     private let label = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
+    private let document: PDFInkDocument
     private let isActive: Bool
     private let isDirty: Bool
     private var isHovering = false
+    private var dragStartLocationInWindow: NSPoint?
+    private var isDraggingTab = false
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
+    var onDrop: ((PDFInkDocument, NSPoint) -> Void)?
 
     init(document: PDFInkDocument, isActive: Bool) {
+        self.document = document
         self.isActive = isActive
         self.isDirty = document.isDocumentEdited
         super.init(frame: .zero)
@@ -142,6 +159,7 @@ final class TabChipView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -180,10 +198,37 @@ final class TabChipView: NSView {
     override func mouseDown(with event: NSEvent) {
         let local = convert(event.locationInWindow, from: nil)
         if !closeButton.frame.contains(local) {
+            dragStartLocationInWindow = event.locationInWindow
+            isDraggingTab = false
             onSelect?()
         } else {
             super.mouseDown(with: event)
         }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = dragStartLocationInWindow else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let distance = hypot(event.locationInWindow.x - start.x,
+                             event.locationInWindow.y - start.y)
+        guard distance >= 6 else { return }
+        if !isDraggingTab {
+            isDraggingTab = true
+            alphaValue = 0.72
+        }
+        NSCursor.closedHand.set()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            dragStartLocationInWindow = nil
+            isDraggingTab = false
+            alphaValue = 1
+        }
+        guard isDraggingTab else { return }
+        onDrop?(document, event.locationInWindow)
     }
 
     @objc private func closeTapped() {

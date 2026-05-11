@@ -45,8 +45,11 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     private var metalRenderer: MetalStrokeRenderer?
     private var inProgressStroke: Stroke?
     private var activeTool: Tool?
+    private var activePan: SpacePanGesture?
     private var lastLaidOutSize: CGSize = .zero
     private var pageStrokesObserver: NSObjectProtocol?
+    private var keyboardModeObserver: NSObjectProtocol?
+    private var lastModifierFlags: NSEvent.ModifierFlags = []
     var isRenderingEnabled: Bool = true {
         didSet {
             guard isRenderingEnabled != oldValue else { return }
@@ -84,6 +87,12 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     //
     // Control 플래그 변화는 flagsChanged + cursorUpdate (NSTrackingArea)에서 감지해 NSCursor 갱신.
     private var didHidePenCursor = false
+
+    private struct SpacePanGesture {
+        let scrollView: NSScrollView
+        let startLocationInWindow: NSPoint
+        let startBoundsOrigin: NSPoint
+    }
 
     /// SF Symbol "eraser.fill"을 NSCursor로. macOS NSCursor가 SF Symbol을 직접 받지 못해 bitmap으로 렌더링.
     private static let eraserCursor: NSCursor = {
@@ -160,6 +169,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
 
     deinit {
         unsubscribeFromPageStrokesChanges()
+        unsubscribeFromKeyboardModeChanges()
         DisplayLinkCoordinator.shared.unsubscribe(self)
     }
 
@@ -170,8 +180,10 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         if window != nil {
             DisplayLinkCoordinator.shared.subscribe(self)
             subscribeToPageStrokesChanges()
+            subscribeToKeyboardModeChanges()
         } else {
             unsubscribeFromPageStrokesChanges()
+            unsubscribeFromKeyboardModeChanges()
             DisplayLinkCoordinator.shared.unsubscribe(self)
         }
     }
@@ -197,6 +209,24 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         guard window != nil, isRenderingEnabled else { return }
         rebuildBakedFromModel()
         presentNow()
+    }
+
+    private func subscribeToKeyboardModeChanges() {
+        guard keyboardModeObserver == nil else { return }
+        keyboardModeObserver = NotificationCenter.default.addObserver(
+            forName: KeyboardModeState.didChangeNotification,
+            object: KeyboardModeState.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshCursorForCurrentState()
+        }
+    }
+
+    private func unsubscribeFromKeyboardModeChanges() {
+        if let keyboardModeObserver {
+            NotificationCenter.default.removeObserver(keyboardModeObserver)
+        }
+        keyboardModeObserver = nil
     }
 
     override func layout() {
@@ -237,6 +267,9 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     // MARK: - Input dispatch
 
     override func mouseDown(with event: NSEvent) {
+        lastModifierFlags = event.modifierFlags
+        window?.makeFirstResponder(self)
+        if beginSpacePan(with: event) { return }
         guard TabletEventRouter.decide(event) == .pen else { return }
         Signposts.signposter.emitEvent("mouseDown")
         let p = pagePoint(for: event)
@@ -256,6 +289,11 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        lastModifierFlags = event.modifierFlags
+        if activePan != nil {
+            updateSpacePan(with: event)
+            return
+        }
         guard activeTool != nil else { return }
         let state = Signposts.signposter.beginInterval("mouseDragged")
         defer { Signposts.signposter.endInterval("mouseDragged", state) }
@@ -264,6 +302,11 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     }
 
     override func mouseUp(with event: NSEvent) {
+        lastModifierFlags = event.modifierFlags
+        if activePan != nil {
+            finishSpacePan()
+            return
+        }
         guard activeTool != nil else {
             // activeTool nil이어도 hide/unhide 카운터 안 어긋나게 paired unhide 안 함 (애초에 hide 안 했음).
             return
@@ -277,25 +320,67 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
             NSCursor.unhide()
             didHidePenCursor = false
         }
+        refreshCursorForCurrentState()
         // synthetic cursor는 liveActive가 false면 자연스럽게 안 그려짐.
+    }
+
+    // MARK: - Space hold page pan
+
+    private func beginSpacePan(with event: NSEvent) -> Bool {
+        guard KeyboardModeState.shared.isSpaceHeld,
+              let scrollView = enclosingScrollView else { return false }
+        activePan = SpacePanGesture(scrollView: scrollView,
+                                    startLocationInWindow: event.locationInWindow,
+                                    startBoundsOrigin: scrollView.contentView.bounds.origin)
+        NSCursor.closedHand.set()
+        return true
+    }
+
+    private func updateSpacePan(with event: NSEvent) {
+        guard let pan = activePan else { return }
+        let deltaX = event.locationInWindow.x - pan.startLocationInWindow.x
+        let deltaY = event.locationInWindow.y - pan.startLocationInWindow.y
+        let proposed = NSPoint(x: pan.startBoundsOrigin.x - deltaX,
+                               y: pan.startBoundsOrigin.y + deltaY)
+        let origin = clampedScrollOrigin(proposed, in: pan.scrollView)
+        pan.scrollView.contentView.scroll(to: origin)
+        pan.scrollView.reflectScrolledClipView(pan.scrollView.contentView)
+    }
+
+    private func finishSpacePan() {
+        activePan = nil
+        refreshCursorForCurrentState()
+    }
+
+    private func clampedScrollOrigin(_ origin: NSPoint, in scrollView: NSScrollView) -> NSPoint {
+        guard let documentView = scrollView.documentView else { return origin }
+        let clipSize = scrollView.contentView.bounds.size
+        let maxX = max(documentView.bounds.width - clipSize.width, 0)
+        let maxY = max(documentView.bounds.height - clipSize.height, 0)
+        return NSPoint(x: min(max(origin.x, 0), maxX),
+                       y: min(max(origin.y, 0), maxY))
     }
 
     // MARK: - Cursor: Control modifier → eraser cursor
 
     override func flagsChanged(with event: NSEvent) {
         super.flagsChanged(with: event)
-        refreshCursorForModifiers(event.modifierFlags)
+        lastModifierFlags = event.modifierFlags
+        refreshCursorForCurrentState()
     }
 
     override func cursorUpdate(with event: NSEvent) {
         // Tracking area의 .cursorUpdate 옵션이 트리거. 마우스가 view 영역에 들어올 때 커서 set.
-        refreshCursorForModifiers(event.modifierFlags)
+        lastModifierFlags = event.modifierFlags
+        refreshCursorForCurrentState()
     }
 
-    private func refreshCursorForModifiers(_ flags: NSEvent.ModifierFlags) {
+    private func refreshCursorForCurrentState() {
         // 드래그 중에는 커서 갱신 안 함 — 이미 mouseDown에서 결정한 상태 유지.
-        guard activeTool == nil else { return }
-        if flags.contains(.control) {
+        guard activeTool == nil, activePan == nil else { return }
+        if KeyboardModeState.shared.isSpaceHeld {
+            NSCursor.openHand.set()
+        } else if lastModifierFlags.contains(.control) {
             Self.eraserCursor.set()
         } else {
             NSCursor.arrow.set()

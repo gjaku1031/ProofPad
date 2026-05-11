@@ -219,6 +219,20 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         }
     }
 
+    func moveTab(document: PDFInkDocument, to insertionIndex: Int) {
+        guard let sourceIndex = documents.firstIndex(where: { $0 === document }) else { return }
+        let boundedInsertionIndex = min(max(insertionIndex, 0), documents.count)
+        let targetIndex = boundedInsertionIndex > sourceIndex
+            ? boundedInsertionIndex - 1
+            : boundedInsertionIndex
+        guard targetIndex != sourceIndex else { return }
+
+        let moved = documents.remove(at: sourceIndex)
+        documents.insert(moved, at: targetIndex)
+        tabBarView.reload()
+        TabSession.save(documents: documents)
+    }
+
     private func showWindowIfNeeded() {
         guard let window = self.window else { return }
         if !window.isVisible {
