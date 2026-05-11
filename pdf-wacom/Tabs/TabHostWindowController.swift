@@ -335,9 +335,16 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     }
 
     private func openRecentDocument(_ url: URL) {
-        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { [weak self] _, _, error in
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { [weak self] document, _, error in
             if let error {
                 self?.presentError(error)
+                return
+            }
+            guard let document = document as? PDFInkDocument else { return }
+            if self?.documents.contains(where: { $0 === document }) == true {
+                self?.activate(document: document)
+            } else {
+                self?.add(document: document)
             }
         }
     }

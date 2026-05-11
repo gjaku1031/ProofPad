@@ -338,6 +338,17 @@ private final class RecentFileRow: NSControl {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    override var acceptsFirstResponder: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
+
     override func mouseEntered(with event: NSEvent) {
         layer?.backgroundColor = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.72).cgColor
     }
@@ -360,6 +371,11 @@ private final class RecentFileRow: NSControl {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let local = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(local) else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            return
+        }
         onOpen(url)
     }
 }
