@@ -17,7 +17,7 @@ enum EraserHitTester {
         )
         var ids: [UUID] = []
         for stroke in page.strokes {
-            // bbox는 stroke의 두께 절반 padding 포함되어 있음. 지우개 반경만큼 더 padding.
+            // bbox는 stroke의 최대 렌더 폭 padding 포함되어 있음. 지우개 반경만큼 더 padding.
             let inflated = stroke.bbox.insetBy(dx: -radius, dy: -radius)
             guard !stroke.bbox.isNull, inflated.intersects(probe) else { continue }
             if intersectsAnySegment(of: stroke, center: center, radius: radius) {
@@ -31,7 +31,7 @@ enum EraserHitTester {
                                              center c: CGPoint,
                                              radius r: CGFloat) -> Bool {
         guard !stroke.points.isEmpty else { return false }
-        let effectiveRadius = r + stroke.width / 2
+        let effectiveRadius = r + stroke.width * 0.65
         if stroke.points.count == 1 {
             let p = stroke.points[0]
             let dx = c.x - CGFloat(p.x), dy = c.y - CGFloat(p.y)

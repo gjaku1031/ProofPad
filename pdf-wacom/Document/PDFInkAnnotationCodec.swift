@@ -113,7 +113,10 @@ private extension PDFInkAnnotationCodec.StoredStroke {
             createdAt: Date(timeIntervalSince1970: createdAt)
         )
         for point in points {
-            guard point.x.isFinite, point.y.isFinite, point.t.isFinite else { return nil }
+            guard point.x.isFinite,
+                  point.y.isFinite,
+                  point.t.isFinite,
+                  point.pressure.isFinite else { return nil }
             stroke.append(point)
         }
         return stroke

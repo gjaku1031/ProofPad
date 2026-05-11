@@ -338,10 +338,9 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     func beginInProgressStroke(_ stroke: Stroke) {
         inProgressStroke = stroke
         let scale = window?.backingScaleFactor ?? 2.0
-        metalRenderer?.beginLiveStroke(color: stroke.color, width: stroke.width, scale: scale)
-        for p in stroke.points {
-            let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
-            metalRenderer?.appendLivePoint(v)
+        metalRenderer?.beginLiveStroke(color: stroke.color, scale: scale)
+        for sample in renderSamples(for: stroke) {
+            metalRenderer?.appendLiveSample(sample)
         }
         // mouseDown 직후 첫 점은 즉시 보여줘야 펜이 닿은 느낌. rate-limit 안 함.
         presentNow()
@@ -349,13 +348,13 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
 
     func updateInProgressStroke(_ stroke: Stroke) {
         guard let renderer = metalRenderer else { return }
-        let already = renderer.livePoints.count
+        let already = renderer.liveSampleCount
         let count = stroke.points.count
         guard count > already else { return }
         for i in already..<count {
             let p = stroke.points[i]
-            let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
-            renderer.appendLivePoint(v)
+            let previous = i > 0 ? stroke.points[i - 1] : nil
+            renderer.appendLiveSample(renderSample(for: p, previous: previous, stroke: stroke))
         }
         // 핫패스 — 매 mouseDragged마다 present 하면 WindowServer가 백프레셔. CVDisplayLink가 vsync에 1회만.
         setNeedsPresent()
@@ -382,10 +381,9 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     private func redrawLiveStrokeFromModel() {
         guard let s = inProgressStroke, let renderer = metalRenderer else { return }
         let scale = window?.backingScaleFactor ?? 2.0
-        renderer.beginLiveStroke(color: s.color, width: s.width, scale: scale)
-        for p in s.points {
-            let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
-            renderer.appendLivePoint(v)
+        renderer.beginLiveStroke(color: s.color, scale: scale)
+        for sample in renderSamples(for: s) {
+            renderer.appendLiveSample(sample)
         }
     }
 
@@ -396,14 +394,9 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         defer { Signposts.signposter.endInterval("rebuildBaked", state) }
         guard let renderer = metalRenderer else { return }
         let recipes: [MetalStrokeRenderer.BakedRecipe] = pageStrokes.strokes.map { stroke in
-            let viewPoints: [SIMD2<Float>] = stroke.points.map { p in
-                let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
-                return SIMD2<Float>(Float(v.x), Float(v.y))
-            }
             return MetalStrokeRenderer.BakedRecipe(
-                points: viewPoints,
-                color: colorVector(for: stroke.color),
-                halfWidth: Float(stroke.width) * 0.5
+                samples: renderSamples(for: stroke),
+                color: colorVector(for: stroke.color)
             )
         }
         renderer.rebuildBaked(recipes)
@@ -420,16 +413,36 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     /// add 경로(commit, redo)에서만 호출. remove / resize는 여전히 full rebuild.
     private func appendStrokeToBaked(_ stroke: Stroke) {
         guard let renderer = metalRenderer else { return }
-        let viewPoints: [SIMD2<Float>] = stroke.points.map { p in
-            let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
-            return SIMD2<Float>(Float(v.x), Float(v.y))
-        }
         let recipe = MetalStrokeRenderer.BakedRecipe(
-            points: viewPoints,
-            color: colorVector(for: stroke.color),
-            halfWidth: Float(stroke.width) * 0.5
+            samples: renderSamples(for: stroke),
+            color: colorVector(for: stroke.color)
         )
         renderer.appendBaked(recipe)
+    }
+
+    private func renderSamples(for stroke: Stroke) -> [MetalStrokeRenderer.StrokeSample] {
+        stroke.points.enumerated().map { idx, point in
+            let previous = idx > 0 ? stroke.points[idx - 1] : nil
+            return renderSample(for: point, previous: previous, stroke: stroke)
+        }
+    }
+
+    private func renderSample(for point: StrokePoint,
+                              previous: StrokePoint?,
+                              stroke: Stroke) -> MetalStrokeRenderer.StrokeSample {
+        let v = viewPoint(forPagePoint: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y)))
+        let halfWidth = InkStrokeDynamics.halfWidth(baseWidth: stroke.width,
+                                                    viewScale: pageToViewScale,
+                                                    point: point,
+                                                    previous: previous)
+        return MetalStrokeRenderer.StrokeSample(position: SIMD2<Float>(Float(v.x), Float(v.y)),
+                                                halfWidth: halfWidth)
+    }
+
+    private var pageToViewScale: CGFloat {
+        let sx = bounds.width / max(pageBounds.width, 1)
+        let sy = bounds.height / max(pageBounds.height, 1)
+        return max(min(sx, sy), 0.01)
     }
 
     private func colorVector(for color: NSColor) -> SIMD4<Float> {

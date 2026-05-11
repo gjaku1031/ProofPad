@@ -67,14 +67,36 @@ enum PDFFlattenExporter {
         let nsColor = stroke.color.usingColorSpace(.deviceRGB) ?? stroke.color
         ctx.saveGState()
         ctx.setStrokeColor(nsColor.cgColor)
-        ctx.setLineWidth(stroke.width)
+        ctx.setFillColor(nsColor.cgColor)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
-        ctx.move(to: CGPoint(x: CGFloat(first.x), y: CGFloat(first.y)))
-        for p in stroke.points.dropFirst() {
-            ctx.addLine(to: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)))
+
+        if stroke.points.count == 1 {
+            let halfWidth = CGFloat(InkStrokeDynamics.halfWidth(baseWidth: stroke.width,
+                                                                viewScale: 1,
+                                                                point: first,
+                                                                previous: nil))
+            let center = CGPoint(x: CGFloat(first.x), y: CGFloat(first.y))
+            ctx.fillEllipse(in: CGRect(x: center.x - halfWidth,
+                                       y: center.y - halfWidth,
+                                       width: halfWidth * 2,
+                                       height: halfWidth * 2))
+            ctx.restoreGState()
+            return
         }
-        ctx.strokePath()
+
+        for i in 1..<stroke.points.count {
+            let previous = stroke.points[i - 1]
+            let point = stroke.points[i]
+            let halfWidth = InkStrokeDynamics.halfWidth(baseWidth: stroke.width,
+                                                        viewScale: 1,
+                                                        point: point,
+                                                        previous: previous)
+            ctx.setLineWidth(CGFloat(halfWidth) * 2)
+            ctx.move(to: CGPoint(x: CGFloat(previous.x), y: CGFloat(previous.y)))
+            ctx.addLine(to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y)))
+            ctx.strokePath()
+        }
         ctx.restoreGState()
     }
 }

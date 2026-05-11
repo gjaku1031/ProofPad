@@ -47,10 +47,10 @@ final class MetalStrokeRenderer {
     private var liveBuffer: MTLBuffer
     private var liveCapacity: Int
     private var liveCount: Int = 0
-    private(set) var livePoints: [SIMD2<Float>] = []
-    private var liveLastPoint: SIMD2<Float>?
+    private(set) var liveSamples: [StrokeSample] = []
+    var liveSampleCount: Int { liveSamples.count }
+    private var liveLastSample: StrokeSample?
     private var liveColor: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 1)
-    private var liveHalfWidth: Float = 1
     private var liveActive = false
 
     // MARK: Baked strokes
@@ -62,12 +62,17 @@ final class MetalStrokeRenderer {
         let color: SIMD4<Float>
     }
 
-    /// rebuildBaked 호출자가 넘기는 stroke 데이터 — view 좌표 점 + 색 + 두께.
+    /// CPU에서 펼칠 stroke sample — view 좌표 점 + 해당 점의 half-width.
+    struct StrokeSample {
+        let position: SIMD2<Float>
+        let halfWidth: Float
+    }
+
+    /// rebuildBaked 호출자가 넘기는 stroke 데이터 — view 좌표 sample + 색.
     /// 페이지 ↔ view 좌표 변환은 호출자 책임 (StrokeCanvasView).
     struct BakedRecipe {
-        let points: [SIMD2<Float>]
+        let samples: [StrokeSample]
         let color: SIMD4<Float>
-        let halfWidth: Float
     }
 
     private var bakedBuffer: MTLBuffer?
@@ -150,9 +155,9 @@ final class MetalStrokeRenderer {
 
     // MARK: - Live stroke API (호출자 = StrokeCanvasView.mouseDown/Dragged/Up)
 
-    func beginLiveStroke(color nsColor: NSColor, width strokeWidth: CGFloat, scale: CGFloat) {
-        livePoints.removeAll(keepingCapacity: true)
-        liveLastPoint = nil
+    func beginLiveStroke(color nsColor: NSColor, scale: CGFloat) {
+        liveSamples.removeAll(keepingCapacity: true)
+        liveLastSample = nil
         liveCount = 0
         liveActive = true
         let c = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
@@ -160,17 +165,16 @@ final class MetalStrokeRenderer {
                                  Float(c.greenComponent),
                                  Float(c.blueComponent),
                                  Float(c.alphaComponent))
-        liveHalfWidth = Float(max(strokeWidth, 0.5)) * 0.5
         scaleFactor = Float(scale)
     }
 
-    func appendLivePoint(_ p: CGPoint) {
-        let new = SIMD2<Float>(Float(p.x), Float(p.y))
-        livePoints.append(new)
+    func appendLiveSample(_ sample: StrokeSample) {
+        let new = normalizedSample(sample)
+        liveSamples.append(new)
 
         // 새로 필요한 vertex: segment(6) + cap(capSegments*3). 첫 점은 cap만.
         var needed = capSegments * 3
-        if liveLastPoint != nil { needed += 6 }
+        if liveLastSample != nil { needed += 6 }
         ensureLiveCapacity(liveCount + needed)
 
         let stride = MemoryLayout<SIMD2<Float>>.stride
@@ -180,33 +184,21 @@ final class MetalStrokeRenderer {
         var writeIdx = 0
 
         // segment from lastPoint → new
-        if let prev = liveLastPoint {
-            let d = new - prev
-            let len = simd_length(d)
-            if len > 0.0001 {
-                let dir = d / len
-                let perp = SIMD2<Float>(-dir.y, dir.x) * liveHalfWidth
-                ptr[writeIdx + 0] = prev + perp
-                ptr[writeIdx + 1] = prev - perp
-                ptr[writeIdx + 2] = new + perp
-                ptr[writeIdx + 3] = prev - perp
-                ptr[writeIdx + 4] = new - perp
-                ptr[writeIdx + 5] = new + perp
-                writeIdx += 6
-            }
+        if let prev = liveLastSample {
+            writeIdx += writeSegment(from: prev, to: new, ptr: ptr, writeStart: writeIdx)
         }
 
         // round cap at new — segment join도 메꿔 노치 방지
-        writeCap(at: new, radius: liveHalfWidth, ptr: ptr, writeStart: writeIdx)
+        writeCap(at: new.position, radius: new.halfWidth, ptr: ptr, writeStart: writeIdx)
         writeIdx += capSegments * 3
 
         liveCount += writeIdx
-        liveLastPoint = new
+        liveLastSample = new
     }
 
     func endLiveStroke() {
-        livePoints.removeAll(keepingCapacity: true)
-        liveLastPoint = nil
+        liveSamples.removeAll(keepingCapacity: true)
+        liveLastSample = nil
         liveCount = 0
         liveActive = false
     }
@@ -222,9 +214,9 @@ final class MetalStrokeRenderer {
         // 우선 필요한 vertex 수 계산 → 큰 버퍼 한 번에 확보 후 채워 넣기.
         var totalVerts = 0
         for r in recipes {
-            totalVerts += capSegments * 3 * r.points.count       // cap per point
-            if r.points.count >= 2 {
-                totalVerts += 6 * (r.points.count - 1)            // segments
+            totalVerts += capSegments * 3 * r.samples.count       // cap per point
+            if r.samples.count >= 2 {
+                totalVerts += 6 * (r.samples.count - 1)            // segments
             }
         }
         guard totalVerts > 0 else {
@@ -240,8 +232,7 @@ final class MetalStrokeRenderer {
 
         for r in recipes {
             let strokeStart = cursor
-            writeStrokeGeometry(points: r.points,
-                                halfWidth: r.halfWidth,
+            writeStrokeGeometry(samples: r.samples,
                                 into: base,
                                 cursor: &cursor)
             let strokeCount = cursor - strokeStart
@@ -259,9 +250,9 @@ final class MetalStrokeRenderer {
     /// 채점 워크플로(한 페이지에 동그라미·X 수십~수백)에서 commit이 점점 느려진다.**
     /// 이 path는 O(stroke의 point 수) — N stroke와 무관.
     func appendBaked(_ recipe: BakedRecipe) {
-        var needed = capSegments * 3 * recipe.points.count
-        if recipe.points.count >= 2 {
-            needed += 6 * (recipe.points.count - 1)
+        var needed = capSegments * 3 * recipe.samples.count
+        if recipe.samples.count >= 2 {
+            needed += 6 * (recipe.samples.count - 1)
         }
         guard needed > 0 else { return }
         ensureBakedCapacity(bakedVertexCount + needed)
@@ -270,8 +261,7 @@ final class MetalStrokeRenderer {
         let base = buf.contents().assumingMemoryBound(to: SIMD2<Float>.self)
         var cursor = bakedVertexCount
         let strokeStart = cursor
-        writeStrokeGeometry(points: recipe.points,
-                            halfWidth: recipe.halfWidth,
+        writeStrokeGeometry(samples: recipe.samples,
                             into: base,
                             cursor: &cursor)
         let strokeCount = cursor - strokeStart
@@ -451,36 +441,30 @@ final class MetalStrokeRenderer {
     /// 점이 2개 미만이거나 동일 위치면 0 반환.
     private func buildPredictedTail() -> Int {
         predictedTailVerts.removeAll(keepingCapacity: true)
-        guard liveActive, livePoints.count >= 2 else { return 0 }
-        let last = livePoints[livePoints.count - 1]
-        let prev = livePoints[livePoints.count - 2]
-        let delta = last - prev
+        guard liveActive, liveSamples.count >= 2 else { return 0 }
+        let last = liveSamples[liveSamples.count - 1]
+        let prev = liveSamples[liveSamples.count - 2]
+        let delta = last.position - prev.position
         let deltaLen = simd_length(delta)
         guard deltaLen > 0.0001 else { return 0 }
 
-        let predicted = last + delta * Self.predictionStrength
-        let segDir = predicted - last
+        let predictedPosition = last.position + delta * Self.predictionStrength
+        let predicted = StrokeSample(position: predictedPosition, halfWidth: last.halfWidth)
+        let segDir = predicted.position - last.position
         let segLen = simd_length(segDir)
         guard segLen > 0.0001 else { return 0 }
-        let dir = segDir / segLen
-        let perp = SIMD2<Float>(-dir.y, dir.x) * liveHalfWidth
 
         predictedTailVerts.reserveCapacity(6 + capSegments * 3)
         // segment last → predicted
-        predictedTailVerts.append(last + perp)
-        predictedTailVerts.append(last - perp)
-        predictedTailVerts.append(predicted + perp)
-        predictedTailVerts.append(last - perp)
-        predictedTailVerts.append(predicted - perp)
-        predictedTailVerts.append(predicted + perp)
+        _ = appendSegmentVertices(from: last, to: predicted, into: &predictedTailVerts)
         // round cap at predicted
         let twoPi: Float = .pi * 2
         for i in 0..<capSegments {
             let a0 = twoPi * Float(i) / Float(capSegments)
             let a1 = twoPi * Float(i + 1) / Float(capSegments)
-            predictedTailVerts.append(predicted)
-            predictedTailVerts.append(predicted + SIMD2<Float>(cos(a0), sin(a0)) * liveHalfWidth)
-            predictedTailVerts.append(predicted + SIMD2<Float>(cos(a1), sin(a1)) * liveHalfWidth)
+            predictedTailVerts.append(predicted.position)
+            predictedTailVerts.append(predicted.position + SIMD2<Float>(cos(a0), sin(a0)) * predicted.halfWidth)
+            predictedTailVerts.append(predicted.position + SIMD2<Float>(cos(a1), sin(a1)) * predicted.halfWidth)
         }
         return predictedTailVerts.count
     }
@@ -489,7 +473,7 @@ final class MetalStrokeRenderer {
     /// 시스템 커서 hide 상태에서 사용자가 펜 위치를 시각으로 확인 가능하게.
     private func buildCursorRing() -> Int {
         cursorVerts.removeAll(keepingCapacity: true)
-        guard liveActive, let center = livePoints.last else { return 0 }
+        guard liveActive, let center = liveSamples.last?.position else { return 0 }
         let R = Self.cursorOuterRadius
         let r = R - Self.cursorThickness
         let N = Self.cursorSegments
@@ -516,39 +500,71 @@ final class MetalStrokeRenderer {
     // MARK: - Geometry helpers
 
     /// stroke 전체 (segments + caps)를 base buffer에 채워 넣는다. cursor를 advance.
-    private func writeStrokeGeometry(points: [SIMD2<Float>],
-                                     halfWidth: Float,
+    private func writeStrokeGeometry(samples: [StrokeSample],
                                      into base: UnsafeMutablePointer<SIMD2<Float>>,
                                      cursor: inout Int) {
-        let n = points.count
+        let normalizedSamples = samples.map(normalizedSample)
+        let n = normalizedSamples.count
         guard n >= 1 else { return }
 
         if n == 1 {
-            writeCap(at: points[0], radius: halfWidth, ptr: base, writeStart: cursor)
+            let sample = normalizedSamples[0]
+            writeCap(at: sample.position, radius: sample.halfWidth, ptr: base, writeStart: cursor)
             cursor += capSegments * 3
             return
         }
 
         for i in 0..<(n - 1) {
-            let a = points[i]
-            let b = points[i + 1]
-            let d = b - a
-            let len = simd_length(d)
-            if len < 0.0001 { continue }
-            let dir = d / len
-            let perp = SIMD2<Float>(-dir.y, dir.x) * halfWidth
-            base[cursor + 0] = a + perp
-            base[cursor + 1] = a - perp
-            base[cursor + 2] = b + perp
-            base[cursor + 3] = a - perp
-            base[cursor + 4] = b - perp
-            base[cursor + 5] = b + perp
-            cursor += 6
+            cursor += writeSegment(from: normalizedSamples[i],
+                                   to: normalizedSamples[i + 1],
+                                   ptr: base,
+                                   writeStart: cursor)
         }
-        for p in points {
-            writeCap(at: p, radius: halfWidth, ptr: base, writeStart: cursor)
+        for sample in normalizedSamples {
+            writeCap(at: sample.position, radius: sample.halfWidth, ptr: base, writeStart: cursor)
             cursor += capSegments * 3
         }
+    }
+
+    @discardableResult
+    private func writeSegment(from a: StrokeSample,
+                              to b: StrokeSample,
+                              ptr: UnsafeMutablePointer<SIMD2<Float>>,
+                              writeStart: Int) -> Int {
+        let d = b.position - a.position
+        let len = simd_length(d)
+        guard len >= 0.0001 else { return 0 }
+        let dir = d / len
+        let normal = SIMD2<Float>(-dir.y, dir.x)
+        let aPerp = normal * a.halfWidth
+        let bPerp = normal * b.halfWidth
+        ptr[writeStart + 0] = a.position + aPerp
+        ptr[writeStart + 1] = a.position - aPerp
+        ptr[writeStart + 2] = b.position + bPerp
+        ptr[writeStart + 3] = a.position - aPerp
+        ptr[writeStart + 4] = b.position - bPerp
+        ptr[writeStart + 5] = b.position + bPerp
+        return 6
+    }
+
+    @discardableResult
+    private func appendSegmentVertices(from a: StrokeSample,
+                                       to b: StrokeSample,
+                                       into vertices: inout [SIMD2<Float>]) -> Int {
+        let d = b.position - a.position
+        let len = simd_length(d)
+        guard len >= 0.0001 else { return 0 }
+        let dir = d / len
+        let normal = SIMD2<Float>(-dir.y, dir.x)
+        let aPerp = normal * a.halfWidth
+        let bPerp = normal * b.halfWidth
+        vertices.append(a.position + aPerp)
+        vertices.append(a.position - aPerp)
+        vertices.append(b.position + bPerp)
+        vertices.append(a.position - aPerp)
+        vertices.append(b.position - bPerp)
+        vertices.append(b.position + bPerp)
+        return 6
     }
 
     /// round cap (triangle fan을 triangle list로 풀어서) — write start부터 capSegments*3 vertex 채움.
@@ -566,6 +582,16 @@ final class MetalStrokeRenderer {
             ptr[writeStart + i * 3 + 1] = v0
             ptr[writeStart + i * 3 + 2] = v1
         }
+    }
+
+    private func normalizedSample(_ sample: StrokeSample) -> StrokeSample {
+        let halfWidth: Float
+        if sample.halfWidth.isFinite {
+            halfWidth = max(sample.halfWidth, 0.3)
+        } else {
+            halfWidth = 0.5
+        }
+        return StrokeSample(position: sample.position, halfWidth: halfWidth)
     }
 
     // MARK: - Buffer / texture management

@@ -7,7 +7,7 @@ import Cocoa
 // === 인바리언트 ===
 //   - points는 항상 시간순 (append만 가능, 중간 삽입/삭제 없음)
 //   - 좌표는 PDF 페이지 좌표 (좌하단 원점, y-up). 단위 = PDF point.
-//   - bbox는 width/2 padding 포함 — Eraser hit-test가 stroke 두께를 고려할 수 있게.
+//   - bbox는 압력 기반 최대 렌더 폭까지 padding — Eraser hit-test가 stroke 두께를 고려할 수 있게.
 //   - bbox 계산이 append에 inline돼 있어서 매 append마다 O(1) 갱신. 별도 invalidate 필요 없음.
 //
 // === PDF 저장 ===
@@ -33,7 +33,7 @@ final class Stroke {
     func append(_ point: StrokePoint) {
         points.append(point)
         let p = CGPoint(x: CGFloat(point.x), y: CGFloat(point.y))
-        let r = max(width / 2, 0.5)
+        let r = max(width * 0.65, 0.5)
         let pointBox = CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)
         bbox = bbox.isNull ? pointBox : bbox.union(pointBox)
     }
