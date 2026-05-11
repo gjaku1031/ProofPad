@@ -4,13 +4,14 @@ import SwiftUI
 // host 윈도우 NSToolbar.
 // [P1|P2|P3|⌫ Eraser|Ink Feel] — 같은 펜을 한 번 더 클릭하면 색·두께 편집 popover.
 // Ink Feel은 새 stroke의 smoothing/pressure/latency 기본값을 조절하는 popover.
-// 우측: keymap, PDF tools, flattened PDF export.
+// 입력 토글은 펜 도구 왼쪽, 우측에는 keymap, PDF tools, flattened PDF export.
 final class ToolbarBuilder: NSObject, NSToolbarDelegate {
 
-    static let identifier = NSToolbar.Identifier("MainToolbar.v6")
+    static let identifier = NSToolbar.Identifier("MainToolbar.v7")
 
     enum ItemID {
         static let sidebar = NSToolbarItem.Identifier("sidebar")
+        static let mouseInput = NSToolbarItem.Identifier("mouseInput")
         static let tools = NSToolbarItem.Identifier("tools")
         static let keymap = NSToolbarItem.Identifier("keymap")
         static let pdfTools = NSToolbarItem.Identifier("pdfTools")
@@ -26,15 +27,30 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         toolbar.delegate = delegate
         objc_setAssociatedObject(toolbar, &Self.delegateKey, delegate, .OBJC_ASSOCIATION_RETAIN)
         PenSettings.shared.onChange = { [weak delegate] in delegate?.syncUI() }
+        delegate.inputSettingsObserver = NotificationCenter.default.addObserver(
+            forName: InputSettings.didChangeNotification,
+            object: InputSettings.shared,
+            queue: .main
+        ) { [weak delegate] _ in
+            delegate?.syncUI()
+        }
         return toolbar
     }
 
     private static var delegateKey: UInt8 = 0
 
     private weak var toolsControl: NSSegmentedControl?
+    private weak var mouseInputButton: NSButton?
     private var penEditorPopover: NSPopover?
     private var inkFeelPopover: NSPopover?
     private var keymapPopover: NSPopover?
+    private var inputSettingsObserver: NSObjectProtocol?
+
+    deinit {
+        if let inputSettingsObserver {
+            NotificationCenter.default.removeObserver(inputSettingsObserver)
+        }
+    }
 
     // MARK: - NSToolbarDelegate
 
@@ -43,6 +59,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch itemIdentifier {
         case ItemID.sidebar:   return makeSidebarItem()
+        case ItemID.mouseInput: return makeMouseInputItem()
         case ItemID.tools:     return makeToolsItem()
         case ItemID.keymap:    return makeKeymapItem()
         case ItemID.pdfTools:  return makePDFToolsItem()
@@ -52,11 +69,11 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.sidebar, .space, ItemID.tools, .flexibleSpace, ItemID.keymap, ItemID.pdfTools, ItemID.exportPDF]
+        [ItemID.sidebar, .space, ItemID.mouseInput, ItemID.tools, .flexibleSpace, ItemID.keymap, ItemID.pdfTools, ItemID.exportPDF]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.sidebar, ItemID.tools, ItemID.keymap, ItemID.pdfTools, ItemID.exportPDF, .flexibleSpace, .space]
+        [ItemID.sidebar, ItemID.mouseInput, ItemID.tools, ItemID.keymap, ItemID.pdfTools, ItemID.exportPDF, .flexibleSpace, .space]
     }
 
     // MARK: - Items
@@ -105,6 +122,26 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
                              accessibilityDescription: "Toggle Sidebar")
         item.action = Selector(("toggleDocumentSidebar:"))
         item.target = nil   // responder chain
+        return item
+    }
+
+    private func makeMouseInputItem() -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: ItemID.mouseInput)
+        item.label = "Mouse"
+        item.paletteLabel = "Ignore Mouse"
+        item.toolTip = "Ignore Mouse Drawing"
+
+        let button = NSButton(image: Self.mouseInputImage(),
+                              target: self,
+                              action: #selector(toggleMouseInput(_:)))
+        button.setButtonType(.toggle)
+        button.bezelStyle = .texturedRounded
+        button.imageScaling = .scaleProportionallyDown
+        button.toolTip = "Ignore Mouse Drawing"
+        button.frame = NSRect(x: 0, y: 0, width: 34, height: 28)
+        item.view = button
+        mouseInputButton = button
+        syncMouseInputButton()
         return item
     }
 
@@ -172,6 +209,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
 
     func syncUI() {
         syncToolsControl()
+        syncMouseInputButton()
     }
 
     private func syncToolsControl() {
@@ -199,6 +237,22 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         path.stroke()
         img.unlockFocus()
         return img
+    }
+
+    private static func mouseInputImage() -> NSImage {
+        NSImage(systemSymbolName: "computermouse",
+                accessibilityDescription: "Ignore Mouse Drawing")
+        ?? NSImage(systemSymbolName: "cursorarrow",
+                   accessibilityDescription: "Ignore Mouse Drawing")
+        ?? NSImage()
+    }
+
+    private func syncMouseInputButton() {
+        guard let button = mouseInputButton else { return }
+        let ignoresMouse = InputSettings.shared.ignoresMouseInput
+        button.state = ignoresMouse ? .on : .off
+        button.contentTintColor = ignoresMouse ? .controlAccentColor : .secondaryLabelColor
+        button.toolTip = ignoresMouse ? "Mouse Drawing Ignored" : "Mouse Drawing Allowed"
     }
 
     // MARK: - Tool click
@@ -230,6 +284,11 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
             dismissPenEditorPopover()
         }
         dismissInkFeelPopover()
+    }
+
+    @objc private func toggleMouseInput(_ sender: NSButton) {
+        InputSettings.shared.setIgnoresMouseInput(sender.state == .on)
+        syncMouseInputButton()
     }
 
     private func showPenEditorPopover(penIndex: Int, anchor: NSSegmentedControl) {

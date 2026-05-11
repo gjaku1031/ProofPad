@@ -35,6 +35,7 @@ targets:
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSPrincipalClass: NSApplication
         NSHighResolutionCapable: true
+        NSRecentDocumentsLimit: 20
         CFBundleDocumentTypes:
           - CFBundleTypeName: PDF Document
             CFBundleTypeRole: Editor

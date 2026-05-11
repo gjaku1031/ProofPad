@@ -4,11 +4,16 @@ import XCTest
 
 final class InputSettingsTests: XCTestCase {
     private var originalSettings: InputSettings.Snapshot!
+    private var originalPenIndex = 0
+    private var originalTool = PenSettings.ToolKind.pen
 
     override func setUp() {
         super.setUp()
         originalSettings = InputSettings.shared.current
+        originalPenIndex = PenSettings.shared.currentPenIndex
+        originalTool = PenSettings.shared.currentTool
         InputSettings.shared.replaceForTesting(.appDefault)
+        PenSettings.shared.selectPen(0)
         KeyboardModeState.shared.resetAll()
         TabletEventRouter.setPenInProximityForTesting(false)
     }
@@ -17,6 +22,12 @@ final class InputSettingsTests: XCTestCase {
         TabletEventRouter.setPenInProximityForTesting(false)
         KeyboardModeState.shared.resetAll()
         InputSettings.shared.replaceForTesting(originalSettings)
+        switch originalTool {
+        case .pen:
+            PenSettings.shared.selectPen(originalPenIndex)
+        case .eraser:
+            PenSettings.shared.selectEraser()
+        }
         super.tearDown()
     }
 

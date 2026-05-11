@@ -198,10 +198,16 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
 
     func add(document: PDFInkDocument) {
         guard !documents.contains(where: { $0 === document }) else {
+            if let url = document.fileURL {
+                RecentPDFStore.shared.noteOpened(url)
+            }
             activate(document: document)
             return
         }
         documents.append(document)
+        if let url = document.fileURL {
+            RecentPDFStore.shared.noteOpened(url)
+        }
         // viewController는 activate 시점에 lazy 생성 — 탭 다수 동시 add 시 부담 분산.
         activate(document: document)
         showWindowIfNeeded()
@@ -338,6 +344,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
                 return
             }
             guard let document = document as? PDFInkDocument else { return }
+            RecentPDFStore.shared.noteOpened(url)
             if self?.documents.contains(where: { $0 === document }) == true {
                 self?.activate(document: document)
             } else {

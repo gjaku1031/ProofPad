@@ -43,5 +43,7 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSRecentDocumentsLimit</key>
+	<integer>20</integer>
 </dict>
 </plist>

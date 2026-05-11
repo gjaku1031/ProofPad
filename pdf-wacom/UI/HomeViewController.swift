@@ -9,7 +9,13 @@ final class HomeViewController: NSViewController {
     var onOpenRecent: ((URL) -> Void)?
 
     private let recentStack = NSStackView()
-    private let maxRecentCount = 10
+    private var recentStoreObserver: NSObjectProtocol?
+
+    deinit {
+        if let recentStoreObserver {
+            NotificationCenter.default.removeObserver(recentStoreObserver)
+        }
+    }
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800))
@@ -52,6 +58,17 @@ final class HomeViewController: NSViewController {
         ])
     }
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        recentStoreObserver = NotificationCenter.default.addObserver(
+            forName: RecentPDFStore.didChangeNotification,
+            object: RecentPDFStore.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reloadRecentFiles()
+        }
+    }
+
     override func viewWillAppear() {
         super.viewWillAppear()
         reloadRecentFiles()
@@ -63,9 +80,7 @@ final class HomeViewController: NSViewController {
             $0.removeFromSuperview()
         }
 
-        let recentURLs = NSDocumentController.shared.recentDocumentURLs
-            .filter { $0.pathExtension.lowercased() == "pdf" }
-            .prefix(maxRecentCount)
+        let recentURLs = RecentPDFStore.shared.recentURLs()
 
         if recentURLs.isEmpty {
             let empty = makeEmptyRecentLabel()
@@ -137,11 +152,34 @@ final class HomeViewController: NSViewController {
         recentStack.alignment = .leading
         recentStack.spacing = 6
         recentStack.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(recentStack)
+
+        let scrollContent = FlippedView()
+        scrollContent.translatesAutoresizingMaskIntoConstraints = false
+        scrollContent.addSubview(recentStack)
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = scrollContent
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(scrollView)
 
         NSLayoutConstraint.activate([
             openButton.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            recentStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            scrollView.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            scrollView.heightAnchor.constraint(equalToConstant: 420),
+
+            scrollContent.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            scrollContent.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            scrollContent.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            scrollContent.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            scrollContent.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor),
+            recentStack.leadingAnchor.constraint(equalTo: scrollContent.leadingAnchor),
+            recentStack.trailingAnchor.constraint(equalTo: scrollContent.trailingAnchor),
+            recentStack.topAnchor.constraint(equalTo: scrollContent.topAnchor),
+            recentStack.bottomAnchor.constraint(equalTo: scrollContent.bottomAnchor),
         ])
         reloadRecentFiles()
         return panel
@@ -280,6 +318,10 @@ private class HomeActionButton: NSButton {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+}
+
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 private final class RecentFileRow: NSControl {
