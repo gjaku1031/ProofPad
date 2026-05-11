@@ -36,6 +36,7 @@ import PDFKit
 //   PenTool/EraserTool이 mouseUp 시점에만 호출하므로(stroke 중에 dirty mark 안 함) 진행 중 I/O 없음.
 @objc(NoteDocument)
 final class NoteDocument: NSDocument {
+    static let editStateDidChangeNotification = Notification.Name("NoteDocument.editStateDidChange")
 
     private(set) var pdfDocument: PDFDocument?
     private(set) var originalPDFData: Data?
@@ -47,6 +48,11 @@ final class NoteDocument: NSDocument {
     private var importedDisplayName: String?
 
     override class var autosavesInPlace: Bool { true }
+
+    override func updateChangeCount(_ change: NSDocument.ChangeType) {
+        super.updateChangeCount(change)
+        NotificationCenter.default.post(name: Self.editStateDidChangeNotification, object: self)
+    }
 
     override class var readableTypes: [String] {
         ["com.ken.pdfnote", "com.adobe.pdf"]

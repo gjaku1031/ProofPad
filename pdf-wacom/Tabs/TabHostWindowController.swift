@@ -21,7 +21,14 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
 
     private var hostContentVC: HostContentViewController!
     private let tabBarView = AppTabBarView(frame: NSRect(x: 0, y: 0, width: 800, height: 40))
+    private var documentEditStateObserver: NSObjectProtocol?
     private var containerView: NSView { hostContentVC.containerView }
+
+    deinit {
+        if let documentEditStateObserver {
+            NotificationCenter.default.removeObserver(documentEditStateObserver)
+        }
+    }
 
     private static func makeShared() -> TabHostWindowController {
         let size = NSSize(width: 1280, height: 800)
@@ -75,6 +82,19 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
 
         // 윈도우 close 처리 (모든 탭 prompt) + 풀스크린 hook
         window.delegate = self
+        documentEditStateObserver = NotificationCenter.default.addObserver(
+            forName: NoteDocument.editStateDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            self?.documentEditStateDidChange(note)
+        }
+    }
+
+    private func documentEditStateDidChange(_ note: Notification) {
+        guard let document = note.object as? NoteDocument else { return }
+        guard documents.contains(where: { $0 === document }) else { return }
+        tabBarView.reload()
     }
 
     private var activeViewController: DocumentViewController? {

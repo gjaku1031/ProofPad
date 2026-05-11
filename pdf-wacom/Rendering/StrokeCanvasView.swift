@@ -4,7 +4,8 @@ import QuartzCore
 
 // MARK: - StrokeCanvasView (unified Metal)
 //
-// 한 PDF 페이지 위에 얹히는 캔버스 NSView. 펜 stroke의 입력 수신·좌표 변환·렌더링·undo 등록을 담당.
+// 한 PDF 페이지 위에 얹히는 캔버스 NSView. 펜 stroke의 입력 수신·좌표 변환·렌더링을 담당.
+// undo 등록은 PageStrokes가 맡고, 캔버스는 model 변경 알림을 받아 현재 화면을 다시 그린다.
 //
 // === 좌표계 (중요) ===
 //   PDF 페이지 좌표:    원점 좌하단, y-up. 단위는 PDF point. 페이지 mediaBox에 한정.
@@ -30,7 +31,7 @@ import QuartzCore
 // === Baked rebuild 트리거 ===
 //   - mouseUp (commitStroke): 새 stroke 추가됨
 //   - removeStroke (eraser, undo): stroke 제거됨
-//   - undo/redo callback (addStrokeRecordingUndo): 다시 추가
+//   - PageStrokes.didChangeNotification: undo/redo 또는 외부 model 변경
 //   - layout (bounds size 변경): viewport 변환 결과가 달라짐
 //   - viewDidChangeBackingProperties: scale 변경, MSAA texture도 재생성
 final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
@@ -45,6 +46,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     private var inProgressStroke: Stroke?
     private var activeTool: Tool?
     private var lastLaidOutSize: CGSize = .zero
+    private var pageStrokesObserver: NSObjectProtocol?
 
     // MARK: - Frame pacing
     //
@@ -143,6 +145,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     deinit {
+        unsubscribeFromPageStrokesChanges()
         DisplayLinkCoordinator.shared.unsubscribe(self)
     }
 
@@ -152,9 +155,34 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         super.viewDidMoveToWindow()
         if window != nil {
             DisplayLinkCoordinator.shared.subscribe(self)
+            subscribeToPageStrokesChanges()
         } else {
+            unsubscribeFromPageStrokesChanges()
             DisplayLinkCoordinator.shared.unsubscribe(self)
         }
+    }
+
+    private func subscribeToPageStrokesChanges() {
+        guard pageStrokesObserver == nil else { return }
+        pageStrokesObserver = NotificationCenter.default.addObserver(
+            forName: PageStrokes.didChangeNotification,
+            object: pageStrokes,
+            queue: .main
+        ) { [weak self] _ in
+            self?.pageStrokesDidChange()
+        }
+    }
+
+    private func unsubscribeFromPageStrokesChanges() {
+        guard let observer = pageStrokesObserver else { return }
+        NotificationCenter.default.removeObserver(observer)
+        pageStrokesObserver = nil
+    }
+
+    private func pageStrokesDidChange() {
+        guard window != nil else { return }
+        rebuildBakedFromModel()
+        presentNow()
     }
 
     override func layout() {
@@ -324,15 +352,14 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         inProgressStroke = nil
         // 모델/baked/live를 1 trip에 처리해서 present 1회로 끝낸다.
         // 이전엔 addStroke가 present한 뒤 deferred async로 endLive + 또 present (2회). 시각 동일하므로 1회로 통합.
-        pageStrokes.add(stroke)
+        pageStrokes.addRecordingUndo(stroke,
+                                     undoManager: window?.undoManager,
+                                     actionName: "Drawing",
+                                     notify: false,
+                                     onChange: onChange)
         appendStrokeToBaked(stroke)
         metalRenderer?.endLiveStroke()
         presentNow()
-        window?.undoManager?.setActionName("Drawing")
-        window?.undoManager?.registerUndo(withTarget: self) { canvas in
-            canvas.removeStrokeRecordingUndo(stroke)
-        }
-        onChange?()
     }
 
     /// inProgressStroke의 모든 점을 view 좌표로 다시 변환해 Metal renderer에 채우고 redraw.
@@ -420,7 +447,14 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
 
     func removeStroke(id: UUID) {
         guard let stroke = pageStrokes.strokes.first(where: { $0.id == id }) else { return }
-        removeStrokeRecordingUndo(stroke)
+        pageStrokes.removeRecordingUndo(stroke,
+                                        undoManager: window?.undoManager,
+                                        notify: false,
+                                        onChange: onChange)
+        // remove는 buffer 중간에 구멍을 내야 해서 incremental compact가 복잡. 전체 rebuild가 단순하고
+        // erase / undo는 mouseDragged만큼 빈번하지 않으므로 cost 허용.
+        rebuildBakedFromModel()
+        presentNow()
     }
 
     // MARK: - Undo grouping helpers (Eraser drag 동안 한 묶음)
@@ -435,29 +469,4 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         window?.undoManager?.endUndoGrouping()
     }
 
-    // MARK: - Add / Remove with undo
-
-    /// Redo path (removeStrokeRecordingUndo가 등록한 redo가 호출). 새 stroke를 incremental append.
-    /// 초기 commit은 commitStroke가 직접 처리 — 거기서 endLiveStroke까지 같이 묶기 위해.
-    private func addStrokeRecordingUndo(_ stroke: Stroke) {
-        pageStrokes.add(stroke)
-        appendStrokeToBaked(stroke)
-        presentNow()
-        window?.undoManager?.registerUndo(withTarget: self) { canvas in
-            canvas.removeStrokeRecordingUndo(stroke)
-        }
-        onChange?()
-    }
-
-    private func removeStrokeRecordingUndo(_ stroke: Stroke) {
-        pageStrokes.remove(id: stroke.id)
-        // remove는 buffer 중간에 구멍을 내야 해서 incremental compact가 복잡. 전체 rebuild가 단순하고
-        // erase / undo는 mouseDragged만큼 빈번하지 않으므로 cost 허용.
-        rebuildBakedFromModel()
-        presentNow()
-        window?.undoManager?.registerUndo(withTarget: self) { canvas in
-            canvas.addStrokeRecordingUndo(stroke)
-        }
-        onChange?()
-    }
 }
