@@ -241,14 +241,21 @@ final class SpreadStripView: NSView {
     }
 
     /// ⌘ + scroll wheel = zoom. 일반 scroll은 NSScrollView 동작.
+    /// 마우스 휠(이산, delta~1)과 트랙패드(연속, delta 누적이 큼)의 스케일이 달라
+    /// hasPreciseScrollingDeltas로 분기 — 한 click에 ~12% 변화 vs 누적해서 부드럽게.
     override func scrollWheel(with event: NSEvent) {
         if event.modifierFlags.contains(.command) {
-            // deltaY 양수=위로 스크롤=확대. trackpad/마우스 mode 모두에서 자연스럽게.
-            // 1단위당 ~3% 확대/축소. 빠른 스크롤도 너무 격렬해지지 않게 dampen.
             let delta = event.scrollingDeltaY
-            guard abs(delta) > 0.01 else { return }
-            let factor = 1.0 + (delta * 0.03).clampedTo(min: -0.5, max: 0.5)
-            let newScale = (currentEffectiveScale() * factor)
+            guard abs(delta) > 0.001 else { return }
+            let step: CGFloat
+            if event.hasPreciseScrollingDeltas {
+                // 트랙패드 — delta가 한 swipe에 누적 ~수십. 작은 계수로 부드럽게.
+                step = (delta * 0.012).clampedTo(min: -0.4, max: 0.4)
+            } else {
+                // 마우스 휠 — delta ~1 per click. 10~12% per click으로 가파르게.
+                step = (delta * 0.12).clampedTo(min: -0.3, max: 0.3)
+            }
+            let newScale = (currentEffectiveScale() * (1.0 + step))
                 .clampedTo(min: 0.25, max: 8.0)
             zoomMode = .custom(newScale)
             return
