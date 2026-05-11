@@ -14,6 +14,9 @@ import Cocoa
 final class PenTool: Tool {
     private var current: Stroke?
     private var builder: InkStrokeBuilder?
+    private var straightLine = StraightLineHoldRecognizer()
+    private weak var currentCanvas: StrokeCanvasView?
+    private var straightLineHoldTimer: Timer?
     private var startTimestamp: TimeInterval = 0
 
     func mouseDown(at pagePoint: CGPoint, event: NSEvent, canvas: StrokeCanvasView) {
@@ -27,17 +30,37 @@ final class PenTool: Tool {
                                   time: 0,
                                   pressure: eventPressure(event))
         stroke.append(point)
+        straightLine.begin(point)
         self.builder = builder
         current = stroke
+        currentCanvas = canvas
+        straightLineHoldTimer?.invalidate()
+        straightLineHoldTimer = nil
         canvas.beginInProgressStroke(stroke)
     }
 
     func mouseDragged(to pagePoint: CGPoint, event: NSEvent, canvas: StrokeCanvasView) {
         guard let stroke = current, var builder else { return }
+        let t = elapsedMilliseconds(for: event)
+        let pressure = eventPressure(event)
+        let rawPoint = StrokePoint(x: Float(pagePoint.x),
+                                   y: Float(pagePoint.y),
+                                   t: t,
+                                   pressure: pressure)
         let newPoints = builder.append(to: pagePoint,
-                                       time: elapsedMilliseconds(for: event),
-                                       pressure: eventPressure(event))
+                                       time: t,
+                                       pressure: pressure)
         self.builder = builder
+
+        if let linePoints = straightLine.append(rawPoint) {
+            straightLineHoldTimer?.invalidate()
+            straightLineHoldTimer = nil
+            stroke.replacePoints(linePoints)
+            canvas.replaceInProgressStroke(stroke)
+            return
+        }
+        scheduleStraightLineHoldCheck(now: t)
+
         guard !newPoints.isEmpty else { return }
         for point in newPoints {
             stroke.append(point)
@@ -47,18 +70,32 @@ final class PenTool: Tool {
 
     func mouseUp(at pagePoint: CGPoint, event: NSEvent, canvas: StrokeCanvasView) {
         guard let stroke = current, var builder else { return }
-        let newPoints = builder.finish(at: pagePoint,
-                                       time: elapsedMilliseconds(for: event),
-                                       pressure: eventPressure(event))
-        for point in newPoints {
-            stroke.append(point)
-        }
-        if !newPoints.isEmpty {
-            canvas.updateInProgressStroke(stroke)
+        let t = elapsedMilliseconds(for: event)
+        let pressure = eventPressure(event)
+        let rawPoint = StrokePoint(x: Float(pagePoint.x),
+                                   y: Float(pagePoint.y),
+                                   t: t,
+                                   pressure: pressure)
+        if let linePoints = straightLine.finish(rawPoint) {
+            stroke.replacePoints(linePoints)
+            canvas.replaceInProgressStroke(stroke)
+        } else {
+            let newPoints = builder.finish(at: pagePoint,
+                                           time: t,
+                                           pressure: pressure)
+            for point in newPoints {
+                stroke.append(point)
+            }
+            if !newPoints.isEmpty {
+                canvas.updateInProgressStroke(stroke)
+            }
         }
         canvas.commitStroke(stroke)
         current = nil
         self.builder = nil
+        currentCanvas = nil
+        straightLineHoldTimer?.invalidate()
+        straightLineHoldTimer = nil
     }
 
     private func elapsedMilliseconds(for event: NSEvent) -> Float {
@@ -68,5 +105,34 @@ final class PenTool: Tool {
 
     private func eventPressure(_ event: NSEvent) -> Float {
         InkStrokeDynamics.normalizedPressure(event.pressure)
+    }
+
+    private func scheduleStraightLineHoldCheck(now: Float) {
+        guard let delayMS = straightLine.holdCheckDelayMS(now: now) else {
+            straightLineHoldTimer?.invalidate()
+            straightLineHoldTimer = nil
+            return
+        }
+        straightLineHoldTimer?.invalidate()
+        let delay = max(TimeInterval(delayMS) / 1_000, 0.01)
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            self?.snapStraightLineAfterTimer()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        straightLineHoldTimer = timer
+    }
+
+    private func snapStraightLineAfterTimer() {
+        guard let stroke = current,
+              let canvas = currentCanvas,
+              let linePoints = straightLine.snapAfterHoldIfReady(now: elapsedNowMilliseconds()) else { return }
+        straightLineHoldTimer = nil
+        stroke.replacePoints(linePoints)
+        canvas.replaceInProgressStroke(stroke)
+    }
+
+    private func elapsedNowMilliseconds() -> Float {
+        let elapsed = max(ProcessInfo.processInfo.systemUptime - startTimestamp, 0)
+        return Float(elapsed * 1_000)
     }
 }

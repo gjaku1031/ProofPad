@@ -217,6 +217,25 @@ final class SpreadStripView: NSView {
         }
     }
 
+    func currentPrimaryPageIndex() -> Int? {
+        guard !spreadViews.isEmpty else { return nil }
+        guard let scroll = enclosingScrollView else {
+            return spreadViews.first?.view.primaryPageIndex(near: .zero)
+        }
+        let center = CGPoint(x: scroll.contentView.bounds.midX,
+                             y: scroll.contentView.bounds.midY)
+        if let entry = spreadViews.first(where: { $0.view.frame.contains(center) }) {
+            let local = CGPoint(x: center.x - entry.view.frame.minX,
+                                y: center.y - entry.view.frame.minY)
+            return entry.view.primaryPageIndex(near: local)
+        }
+        guard let index = currentVisibleSpreadIndex() else { return nil }
+        let view = spreadViews[index].view
+        let local = CGPoint(x: center.x - view.frame.minX,
+                            y: center.y - view.frame.minY)
+        return view.primaryPageIndex(near: local)
+    }
+
     private func containsPage(_ spread: Spread, pageIndex: Int) -> Bool {
         if let l = spread.leftPage, l.document?.index(for: l) == pageIndex { return true }
         if let r = spread.rightPage, r.document?.index(for: r) == pageIndex { return true }

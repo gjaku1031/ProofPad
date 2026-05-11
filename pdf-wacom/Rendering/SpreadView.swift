@@ -101,6 +101,17 @@ final class SpreadView: NSView {
         rightPageView?.setRenderingEnabled(enabled)
     }
 
+    func primaryPageIndex(near point: CGPoint) -> Int? {
+        let pageViews = [leftPageView, rightPageView].compactMap { $0 }
+        guard !pageViews.isEmpty else { return nil }
+        if let hit = pageViews.first(where: { $0.frame.contains(point) }) {
+            return hit.pageIndex
+        }
+        return pageViews.min { a, b in
+            abs(a.frame.midX - point.x) < abs(b.frame.midX - point.x)
+        }?.pageIndex
+    }
+
     override func layout() {
         super.layout()
         if pagesAcross <= 1 {

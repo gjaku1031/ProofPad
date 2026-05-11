@@ -72,6 +72,10 @@ final class PDFInkDocument: NSDocument {
         pagesPerSpread == 1 ? 1 : 2
     }
 
+    var pageCount: Int {
+        pdfDocument?.pageCount ?? 0
+    }
+
     func setCoverIsSinglePage(_ value: Bool) {
         guard coverIsSinglePage != value else { return }
         coverIsSinglePage = value
@@ -81,6 +85,64 @@ final class PDFInkDocument: NSDocument {
         let normalized = value == 1 ? 1 : 2
         guard effectivePagesPerSpread != normalized else { return }
         pagesPerSpread = normalized
+    }
+
+    // MARK: - PDF page editing
+
+    func appendPages(from other: PDFDocument) throws {
+        guard let pdf = pdfDocument else { throw Self.writeError("편집할 PDF가 없습니다.") }
+        guard other.pageCount > 0 else { return }
+        for index in 0..<other.pageCount {
+            guard let page = other.page(at: index)?.copy() as? PDFPage else { continue }
+            pdf.insert(page, at: pdf.pageCount)
+        }
+        updateChangeCount(.changeDone)
+    }
+
+    func appendImagesAsPages(from imageURLs: [URL]) throws {
+        guard let pdf = pdfDocument else { throw Self.writeError("편집할 PDF가 없습니다.") }
+        for url in imageURLs {
+            guard let image = NSImage(contentsOf: url),
+                  let page = PDFPage(image: image) else {
+                throw Self.corruptFileError("\(url.lastPathComponent)을 PDF 페이지로 변환할 수 없습니다.")
+            }
+            pdf.insert(page, at: pdf.pageCount)
+        }
+        updateChangeCount(.changeDone)
+    }
+
+    func deletePage(at pageIndex: Int) throws {
+        guard let pdf = pdfDocument else { throw Self.writeError("편집할 PDF가 없습니다.") }
+        guard pdf.pageCount > 1 else {
+            throw Self.writeError("마지막 페이지는 삭제할 수 없습니다.")
+        }
+        guard pageIndex >= 0, pageIndex < pdf.pageCount else {
+            throw Self.writeError("삭제할 페이지가 없습니다.")
+        }
+        pdf.removePage(at: pageIndex)
+        pageStrokesMap = Self.reindexStrokesAfterDeletingPage(pageIndex, pageStrokesMap)
+        updateChangeCount(.changeDone)
+    }
+
+    func singlePagePDFData(pageIndex: Int) throws -> Data {
+        guard let pdf = pdfDocument else { throw Self.writeError("내보낼 PDF가 없습니다.") }
+        guard let page = pdf.page(at: pageIndex)?.copy() as? PDFPage else {
+            throw Self.writeError("내보낼 페이지가 없습니다.")
+        }
+        if let pageStrokes = strokesIfExists(forPage: pageIndex) {
+            let pageBounds = page.bounds(for: .mediaBox)
+            for stroke in pageStrokes.strokes {
+                if let annotation = PDFInkAnnotationCodec.annotation(from: stroke, pageBounds: pageBounds) {
+                    page.addAnnotation(annotation)
+                }
+            }
+        }
+        let out = PDFDocument()
+        out.insert(page, at: 0)
+        guard let data = out.dataRepresentation() else {
+            throw Self.writeError("페이지 PDF 데이터를 만들 수 없습니다.")
+        }
+        return data
     }
 
     // MARK: - Window
@@ -150,6 +212,23 @@ final class PDFInkDocument: NSDocument {
             }
         }
 
+        return result
+    }
+
+    private static func reindexStrokesAfterDeletingPage(_ deletedIndex: Int,
+                                                        _ old: [Int: PageStrokes]) -> [Int: PageStrokes] {
+        var result: [Int: PageStrokes] = [:]
+        for (pageIndex, pageStrokes) in old {
+            if pageIndex < deletedIndex {
+                result[pageIndex] = pageStrokes
+            } else if pageIndex > deletedIndex {
+                let shifted = PageStrokes(pageIndex: pageIndex - 1)
+                for stroke in pageStrokes.strokes {
+                    shifted.add(stroke, notify: false)
+                }
+                result[pageIndex - 1] = shifted
+            }
+        }
         return result
     }
 

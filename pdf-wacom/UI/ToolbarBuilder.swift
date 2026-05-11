@@ -12,6 +12,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     enum ItemID {
         static let sidebar = NSToolbarItem.Identifier("sidebar")
         static let tools = NSToolbarItem.Identifier("tools")
+        static let pdfTools = NSToolbarItem.Identifier("pdfTools")
         static let exportPDF = NSToolbarItem.Identifier("exportPDF")
     }
 
@@ -41,17 +42,18 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         switch itemIdentifier {
         case ItemID.sidebar:   return makeSidebarItem()
         case ItemID.tools:     return makeToolsItem()
+        case ItemID.pdfTools:  return makePDFToolsItem()
         case ItemID.exportPDF: return makeExportItem()
         default:               return nil
         }
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.sidebar, .space, ItemID.tools, .flexibleSpace, ItemID.exportPDF]
+        [ItemID.sidebar, .space, ItemID.tools, .flexibleSpace, ItemID.pdfTools, ItemID.exportPDF]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.sidebar, ItemID.tools, ItemID.exportPDF, .flexibleSpace, .space]
+        [ItemID.sidebar, ItemID.tools, ItemID.pdfTools, ItemID.exportPDF, .flexibleSpace, .space]
     }
 
     // MARK: - Items
@@ -111,6 +113,38 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         item.action = Selector(("exportPDF:"))
         item.target = nil
         return item
+    }
+
+    private func makePDFToolsItem() -> NSToolbarItem {
+        let item = NSMenuToolbarItem(itemIdentifier: ItemID.pdfTools)
+        item.label = "PDF"
+        item.paletteLabel = "PDF Tools"
+        item.toolTip = "PDF Tools"
+        item.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "PDF Tools")
+        item.menu = Self.makePDFToolsMenu()
+        return item
+    }
+
+    private static func makePDFToolsMenu() -> NSMenu {
+        let menu = NSMenu(title: "PDF Tools")
+        menu.addItem(NSMenuItem(title: "Append PDF Pages…",
+                                action: Selector(("appendPDFPages:")),
+                                keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Append Images as Pages…",
+                                action: Selector(("appendImagesAsPages:")),
+                                keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Delete Current Page",
+                                action: Selector(("deleteCurrentPage:")),
+                                keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Export Current Page as PDF…",
+                                action: Selector(("exportCurrentPagePDF:")),
+                                keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Export Pages as Images…",
+                                action: Selector(("exportPagesAsImages:")),
+                                keyEquivalent: ""))
+        return menu
     }
 
     // MARK: - Sync UI

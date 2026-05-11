@@ -16,8 +16,7 @@ final class AppTabBarView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        // titlebar 영역과 톤을 맞춤 — 약간 더 가라앉은 배경. 시스템 windowBackgroundColor는 light/dark 자동.
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -170,11 +169,9 @@ final class TabChipView: NSView {
 
     private func updateBackground() {
         if isActive {
-            // 활성 탭 — controlBackgroundColor (보통 흰색)로 toolbar에서 분리되는 느낌.
-            // accent 색을 절제하고 contrast로 활성 표시.
-            layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72).cgColor
         } else if isHovering {
-            layer?.backgroundColor = NSColor.unemphasizedSelectedContentBackgroundColor.cgColor
+            layer?.backgroundColor = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.72).cgColor
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
         }

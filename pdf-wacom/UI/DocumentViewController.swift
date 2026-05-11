@@ -52,7 +52,7 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
         let containerSize = NSSize(width: 1280, height: 800)
         let container = NSView(frame: NSRect(origin: .zero, size: containerSize))
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        container.layer?.backgroundColor = NSColor.clear.cgColor
 
         // NSSplitView (sidebar | content)
         let split = NSSplitView(frame: container.bounds)
@@ -71,18 +71,18 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
         }
 
         // Content area (scrollView + stripView)
-        let contentArea = NSView()
-        contentArea.wantsLayer = true
-        // underPageBackgroundColor — Apple의 semantic color "페이지가 떠 있는 배경". 다크모드 자동 대응.
-        contentArea.layer?.backgroundColor = NSColor.underPageBackgroundColor.cgColor
+        let contentArea = NSVisualEffectView()
+        contentArea.material = .underWindowBackground
+        contentArea.blendingMode = .withinWindow
+        contentArea.state = .active
 
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.borderType = .noBorder
-        scroll.drawsBackground = true
-        scroll.backgroundColor = NSColor.underPageBackgroundColor
+        scroll.drawsBackground = false
+        scroll.backgroundColor = .clear
 
         let strip = SpreadStripView()
         strip.frame = NSRect(x: 0, y: 0, width: 800, height: 100)
@@ -226,6 +226,137 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
                 let alert = NSAlert(error: error)
                 alert.runModal()
             }
+        }
+    }
+
+    // MARK: - PDF editing
+
+    @objc func appendPDFPages(_ sender: Any?) {
+        guard let doc = document, let window = view.window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [weak self, weak doc] response in
+            guard response == .OK, let doc else { return }
+            do {
+                for url in panel.urls {
+                    guard let pdf = PDFDocument(url: url) else {
+                        throw NSError(domain: NSCocoaErrorDomain,
+                                      code: NSFileReadCorruptFileError,
+                                      userInfo: [NSLocalizedDescriptionKey: "\(url.lastPathComponent)을 열 수 없습니다."])
+                    }
+                    try doc.appendPages(from: pdf)
+                }
+                self?.reloadAfterPDFEdit()
+            } catch {
+                self?.showError(error)
+            }
+        }
+    }
+
+    @objc func appendImagesAsPages(_ sender: Any?) {
+        guard let doc = document, let window = view.window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [weak self, weak doc] response in
+            guard response == .OK, let doc else { return }
+            do {
+                try doc.appendImagesAsPages(from: panel.urls)
+                self?.reloadAfterPDFEdit()
+            } catch {
+                self?.showError(error)
+            }
+        }
+    }
+
+    @objc func deleteCurrentPage(_ sender: Any?) {
+        guard let doc = document, let window = view.window else { return }
+        let pageIndex = currentPageIndex()
+        let alert = NSAlert()
+        alert.messageText = "\(pageIndex + 1)페이지를 삭제할까요?"
+        alert.informativeText = "이 작업은 실행 취소로 되돌릴 수 없습니다. 저장 전에는 파일에 반영되지 않습니다."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self, weak doc] response in
+            guard response == .alertFirstButtonReturn, let doc else { return }
+            do {
+                try doc.deletePage(at: pageIndex)
+                self?.reloadAfterPDFEdit(selectingPage: min(pageIndex, max(doc.pageCount - 1, 0)))
+            } catch {
+                self?.showError(error)
+            }
+        }
+    }
+
+    @objc func exportCurrentPagePDF(_ sender: Any?) {
+        guard let doc = document, let window = view.window else { return }
+        let pageIndex = currentPageIndex()
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = "\(doc.displayName ?? "PDF")-page-\(pageIndex + 1).pdf"
+        panel.canCreateDirectories = true
+        panel.beginSheetModal(for: window) { [weak self, weak doc] response in
+            guard response == .OK, let url = panel.url, let doc else { return }
+            do {
+                let data = try doc.singlePagePDFData(pageIndex: pageIndex)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                self?.showError(error)
+            }
+        }
+    }
+
+    @objc func exportPagesAsImages(_ sender: Any?) {
+        guard let doc = document,
+              let pdf = doc.pdfDocument,
+              let window = view.window else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Export"
+        panel.beginSheetModal(for: window) { [weak self, weak doc, weak pdf] response in
+            guard response == .OK,
+                  let folder = panel.url,
+                  let doc,
+                  let pdf else { return }
+            let installed = PDFInkAnnotationCodec.installAnnotations(for: doc.allPageStrokes, into: pdf)
+            defer { PDFInkAnnotationCodec.removeAnnotations(installed) }
+            do {
+                try PDFImageExporter.exportAllPages(of: pdf,
+                                                    to: folder,
+                                                    baseName: doc.displayName ?? "PDF")
+            } catch {
+                self?.showError(error)
+            }
+        }
+    }
+
+    private func currentPageIndex() -> Int {
+        let count = document?.pageCount ?? 0
+        let current = stripView.currentPrimaryPageIndex() ?? 0
+        return min(max(current, 0), max(count - 1, 0))
+    }
+
+    private func reloadAfterPDFEdit(selectingPage pageIndex: Int? = nil) {
+        reloadSpreads()
+        guard let pageIndex else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.stripView.scroll(toPageIndex: pageIndex)
+        }
+    }
+
+    private func showError(_ error: Error) {
+        let alert = NSAlert(error: error)
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
         }
     }
 }

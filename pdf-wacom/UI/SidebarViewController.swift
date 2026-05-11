@@ -27,9 +27,10 @@ final class SidebarViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func loadView() {
-        let v = NSView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
-        v.wantsLayer = true
-        v.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let v = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+        v.material = .sidebar
+        v.blendingMode = .withinWindow
+        v.state = .active
 
         // 섹션 헤더 — 작은 caps small, secondary label color로 시각 위계 표현.
         let modeLabel = NSTextField(labelWithString: "PAGE LAYOUT")
@@ -189,6 +190,7 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
     override func loadView() {
         let v = NSView()
         v.wantsLayer = true
+        v.layer?.backgroundColor = NSColor.clear.cgColor
 
         imageContainer.translatesAutoresizingMaskIntoConstraints = false
         imageContainer.wantsLayer = true

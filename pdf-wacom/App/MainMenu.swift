@@ -72,11 +72,38 @@ enum MainMenuBuilder {
         menu.addItem(saveAs)
 
         menu.addItem(.separator())
+        menu.addItem(makePDFToolsSubmenu())
+        menu.addItem(.separator())
+
         let export = NSMenuItem(title: "Export Flattened PDF…",
                                 action: Selector(("exportPDF:")),
                                 keyEquivalent: "E")
         export.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(export)
+        item.submenu = menu
+        return item
+    }
+
+    private static func makePDFToolsSubmenu() -> NSMenuItem {
+        let item = NSMenuItem(title: "PDF Tools", action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: "PDF Tools")
+        menu.addItem(NSMenuItem(title: "Append PDF Pages…",
+                                action: Selector(("appendPDFPages:")),
+                                keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Append Images as Pages…",
+                                action: Selector(("appendImagesAsPages:")),
+                                keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Delete Current Page",
+                                action: Selector(("deleteCurrentPage:")),
+                                keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Export Current Page as PDF…",
+                                action: Selector(("exportCurrentPagePDF:")),
+                                keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Export Pages as Images…",
+                                action: Selector(("exportPagesAsImages:")),
+                                keyEquivalent: ""))
         item.submenu = menu
         return item
     }

@@ -360,6 +360,12 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         setNeedsPresent()
     }
 
+    func replaceInProgressStroke(_ stroke: Stroke) {
+        inProgressStroke = stroke
+        redrawLiveStrokeFromModel()
+        presentNow()
+    }
+
     func commitStroke(_ stroke: Stroke) {
         let state = Signposts.signposter.beginInterval("commit")
         defer { Signposts.signposter.endInterval("commit", state) }

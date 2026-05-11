@@ -50,6 +50,8 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         window.title = "pdf-wacom"
         // 탭 chip에 이미 문서명이 있어 title 텍스트는 중복. 깔끔하게 숨김.
         window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.setFrameAutosaveName("HostWindow")
         let wc = TabHostWindowController(window: window)
         wc.setupContent()
@@ -69,7 +71,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         // NSToolbar
         window.toolbar = ToolbarBuilder.makeToolbar()
         if #available(macOS 11.0, *) {
-            window.toolbarStyle = .unified
+            window.toolbarStyle = .unifiedCompact
         }
 
         // 탭바 — titlebar accessory(.bottom)로 toolbar 아래에 부착.
@@ -116,6 +118,11 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
     @IBAction func actualSize(_ sender: Any?) { activeViewController?.actualSize(sender) }
     @IBAction func goToPage(_ sender: Any?) { activeViewController?.goToPage(sender) }
     @IBAction func exportPDF(_ sender: Any?) { activeViewController?.exportPDF(sender) }
+    @IBAction func appendPDFPages(_ sender: Any?) { activeViewController?.appendPDFPages(sender) }
+    @IBAction func appendImagesAsPages(_ sender: Any?) { activeViewController?.appendImagesAsPages(sender) }
+    @IBAction func deleteCurrentPage(_ sender: Any?) { activeViewController?.deleteCurrentPage(sender) }
+    @IBAction func exportCurrentPagePDF(_ sender: Any?) { activeViewController?.exportCurrentPagePDF(sender) }
+    @IBAction func exportPagesAsImages(_ sender: Any?) { activeViewController?.exportPagesAsImages(sender) }
     @IBAction func toggleDocumentSidebar(_ sender: Any?) {
         activeViewController?.toggleDocumentSidebar(sender)
     }
@@ -130,11 +137,17 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
              #selector(actualSize(_:)),
              #selector(goToPage(_:)),
              #selector(exportPDF(_:)),
+             #selector(appendPDFPages(_:)),
+             #selector(appendImagesAsPages(_:)),
+             #selector(exportCurrentPagePDF(_:)),
+             #selector(exportPagesAsImages(_:)),
              #selector(toggleDocumentSidebar(_:)),
              #selector(closeActiveTab(_:)),
              #selector(nextTab(_:)),
              #selector(previousTab(_:)):
             return activeDocument != nil
+        case #selector(deleteCurrentPage(_:)):
+            return (activeDocument?.pageCount ?? 0) > 1
         case #selector(tab1(_:)): return documents.count >= 1
         case #selector(tab2(_:)): return documents.count >= 2
         case #selector(tab3(_:)): return documents.count >= 3

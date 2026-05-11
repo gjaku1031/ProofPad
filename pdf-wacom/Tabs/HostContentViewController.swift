@@ -16,9 +16,12 @@ final class HostContentViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func loadView() {
-        let v = NSView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800))
-        v.wantsLayer = true
-        v.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let v = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800))
+        v.material = .windowBackground
+        v.blendingMode = .behindWindow
+        v.state = .active
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.clear.cgColor
         v.addSubview(containerView)
         view = v
     }

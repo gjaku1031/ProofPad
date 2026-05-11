@@ -55,6 +55,43 @@ final class PDFInkDocumentTests: XCTestCase {
         XCTAssertFalse(document.isDocumentEdited)
     }
 
+    func testAppendPDFPagesIncreasesPageCount() throws {
+        let document = PDFInkDocument()
+        try document.read(from: makePDFData(pageCount: 1), ofType: "com.adobe.pdf")
+        let other = try makePDFDocument(pageCount: 2)
+
+        try document.appendPages(from: other)
+
+        XCTAssertEqual(document.pdfDocument?.pageCount, 3)
+    }
+
+    func testDeletePageReindexesEditableStrokes() throws {
+        let document = PDFInkDocument()
+        try document.read(from: makePDFData(pageCount: 3), ofType: "com.adobe.pdf")
+        let stroke = makeStroke()
+        document.strokes(forPage: 2).add(stroke, notify: false)
+
+        try document.deletePage(at: 1)
+
+        XCTAssertEqual(document.pdfDocument?.pageCount, 2)
+        XCTAssertNil(document.strokesIfExists(forPage: 2))
+        XCTAssertEqual(document.strokesIfExists(forPage: 1)?.strokes.map(\.id), [stroke.id])
+    }
+
+    func testSinglePagePDFDataIncludesEditableInk() throws {
+        let document = PDFInkDocument()
+        try document.read(from: makePDFData(pageCount: 1), ofType: "com.adobe.pdf")
+        let stroke = makeStroke()
+        document.strokes(forPage: 0).add(stroke, notify: false)
+
+        let data = try document.singlePagePDFData(pageIndex: 0)
+        let exported = try XCTUnwrap(PDFDocument(data: data))
+        let annotation = try XCTUnwrap(exported.page(at: 0)?.annotations.first)
+
+        XCTAssertEqual(exported.pageCount, 1)
+        XCTAssertEqual(PDFInkAnnotationCodec.stroke(from: annotation)?.id, stroke.id)
+    }
+
     private func makeStroke() -> Stroke {
         let stroke = Stroke(
             id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
