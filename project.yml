@@ -1,0 +1,92 @@
+name: pdf-wacom
+options:
+  bundleIdPrefix: com.ken
+  deploymentTarget:
+    macOS: "13.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    CLANG_WARN_DOCUMENTATION_COMMENTS: NO
+    ENABLE_DEBUG_DYLIB: "NO"
+
+targets:
+  pdf-wacom:
+    type: application
+    platform: macOS
+    sources:
+      - path: pdf-wacom
+        excludes:
+          - "Info.plist"
+    info:
+      path: pdf-wacom/Info.plist
+      properties:
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleDisplayName: pdf-wacom
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        CFBundlePackageType: APPL
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSPrincipalClass: NSApplication
+        NSHighResolutionCapable: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: pdf-wacom Note
+            CFBundleTypeRole: Editor
+            LSItemContentTypes: [com.ken.pdfnote]
+            LSTypeIsPackage: true
+            NSDocumentClass: NoteDocument
+          - CFBundleTypeName: PDF Document
+            CFBundleTypeRole: Viewer
+            LSItemContentTypes: [com.adobe.pdf]
+            LSHandlerRank: Alternate
+            NSDocumentClass: NoteDocument
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.ken.pdfnote
+            UTTypeDescription: pdf-wacom Note
+            UTTypeConformsTo: [com.apple.package]
+            UTTypeTagSpecification:
+              public.filename-extension: [pdfnote]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ken.pdf-wacom
+        PRODUCT_NAME: pdf-wacom
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+
+  pdf-wacomTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: pdf-wacomTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ken.pdf-wacom.tests
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: pdf-wacom
+
+schemes:
+  pdf-wacom:
+    build:
+      targets:
+        pdf-wacom: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - pdf-wacomTests
+    archive:
+      config: Release
