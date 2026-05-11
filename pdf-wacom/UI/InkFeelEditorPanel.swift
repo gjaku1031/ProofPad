@@ -3,9 +3,11 @@ import SwiftUI
 // 새 stroke에 적용될 필기감 기본값을 조절한다. 현재 appDefault가 방금 튜닝한 "괜찮은 느낌"이다.
 struct InkFeelEditorView: View {
     @State private var settings: InkFeelSettings.Snapshot
+    @State private var ignoresMouseInput: Bool
 
     init() {
         _settings = State(initialValue: InkFeelSettings.shared.current)
+        _ignoresMouseInput = State(initialValue: InputSettings.shared.ignoresMouseInput)
     }
 
     var body: some View {
@@ -41,6 +43,10 @@ struct InkFeelEditorView: View {
             Divider()
 
             HStack {
+                Toggle("Ignore Mouse", isOn: $ignoresMouseInput)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .font(.caption)
                 Spacer()
                 Button {
                     settings = .appDefault
@@ -54,6 +60,9 @@ struct InkFeelEditorView: View {
         .frame(width: 320)
         .onChange(of: settings) { new in
             InkFeelSettings.shared.update(new)
+        }
+        .onChange(of: ignoresMouseInput) { new in
+            InputSettings.shared.setIgnoresMouseInput(new)
         }
     }
 }

@@ -23,11 +23,18 @@ enum TabletEventRouter {
         penInProximity = event.isEnteringProximity
     }
 
+#if DEBUG
+    static func setPenInProximityForTesting(_ value: Bool) {
+        penInProximity = value
+    }
+#endif
+
     static func decide(_ event: NSEvent) -> Decision {
         // 1) tabletPoint subtype이면 무조건 펜.
         if event.subtype == .tabletPoint { return .pen }
         // 2) 펜이 근접 안에 있으면 subtype이 잠깐 다르게 와도 펜으로 인정 (proximity 경계 transition).
         if penInProximity { return .pen }
-        return .ignore
+        // 3) 테스트/범용 입력용으로 마우스 drawing을 허용할 수 있다. 기본값은 기존처럼 ignore.
+        return InputSettings.shared.ignoresMouseInput ? .ignore : .pen
     }
 }

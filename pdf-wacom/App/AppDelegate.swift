@@ -3,9 +3,10 @@ import Cocoa
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var arrowKeyMonitor: Any?
-    private var spacePanMonitor: Any?
+    private var holdKeyMonitor: Any?
     private var proximityMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
+    private var inputSettingsObserver: NSObjectProtocol?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenuBuilder.build()
@@ -21,10 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installApplicationIcon()
         NSApp.activate(ignoringOtherApps: true)
-        installSpacePanMonitor()
+        installHoldKeyMonitor()
         installArrowKeyNavigation()
         installTabletProximityMonitor()
         installKeyboardModeReset()
+        installInputSettingsReset()
         DispatchQueue.main.async {
             self.restoreSessionOrPromptOpen()
         }
@@ -36,20 +38,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.applicationIconImage = icon
     }
 
-    private func installSpacePanMonitor() {
-        spacePanMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
-            guard event.keyCode == 49 else { return event } // Space
-            if event.type == .keyUp, KeyboardModeState.shared.isSpaceHeld {
-                KeyboardModeState.shared.setSpaceHeld(false)
-                return nil
+    private func installHoldKeyMonitor() {
+        holdKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
+            switch event.type {
+            case .flagsChanged:
+                if !Self.isInputRecorderFocused {
+                    Self.syncModifierHoldStates(with: event.modifierFlags)
+                }
+                return event
+            case .keyDown, .keyUp:
+                return Self.handleHoldKeyEvent(event) ? nil : event
+            default:
+                return event
             }
-            let reservedModifiers = event.modifierFlags.intersection([.command, .option, .control])
-            guard reservedModifiers.isEmpty else { return event }
-            guard NSApp.keyWindow?.windowController is TabHostWindowController else { return event }
-            guard !Self.isTextInputFocused else { return event }
-
-            KeyboardModeState.shared.setSpaceHeld(true)
-            return nil
         }
     }
 
@@ -58,13 +59,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return firstResponder is NSText || firstResponder is NSTextView
     }
 
+    private static var isInputRecorderFocused: Bool {
+        NSApp.keyWindow?.firstResponder is InputKeyCaptureView
+    }
+
+    private static func syncModifierHoldStates(with flags: NSEvent.ModifierFlags) {
+        let settings = InputSettings.shared
+        if settings.moveHoldKey.isModifier {
+            KeyboardModeState.shared.setMoveHeld(settings.moveHoldKey.matchesModifierFlags(flags))
+        }
+        if settings.eraserHoldKey.isModifier {
+            KeyboardModeState.shared.setEraserHeld(settings.eraserHoldKey.matchesModifierFlags(flags))
+        }
+    }
+
+    private static func handleHoldKeyEvent(_ event: NSEvent) -> Bool {
+        let settings = InputSettings.shared
+        let matchesMove = settings.moveHoldKey.matchesKeyCode(event.keyCode)
+        let matchesEraser = settings.eraserHoldKey.matchesKeyCode(event.keyCode)
+        guard matchesMove || matchesEraser else { return false }
+
+        if event.type == .keyUp {
+            var consumed = false
+            if matchesMove, KeyboardModeState.shared.isMoveHeld {
+                KeyboardModeState.shared.setMoveHeld(false)
+                consumed = true
+            }
+            if matchesEraser, KeyboardModeState.shared.isEraserHeld {
+                KeyboardModeState.shared.setEraserHeld(false)
+                consumed = true
+            }
+            return consumed
+        }
+
+        guard shouldStartHoldMode(for: event) else { return false }
+        if matchesMove {
+            KeyboardModeState.shared.setMoveHeld(true)
+        }
+        if matchesEraser {
+            KeyboardModeState.shared.setEraserHeld(true)
+        }
+        return true
+    }
+
+    private static func shouldStartHoldMode(for event: NSEvent) -> Bool {
+        guard NSApp.keyWindow?.windowController is TabHostWindowController else { return false }
+        guard !isTextInputFocused, !isInputRecorderFocused else { return false }
+        let reservedModifiers = event.modifierFlags.intersection([.command, .option, .control])
+        return reservedModifiers.isEmpty
+    }
+
     private func installKeyboardModeReset() {
         resignActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
             object: NSApp,
             queue: .main
         ) { _ in
-            KeyboardModeState.shared.setSpaceHeld(false)
+            KeyboardModeState.shared.resetAll()
+        }
+    }
+
+    private func installInputSettingsReset() {
+        inputSettingsObserver = NotificationCenter.default.addObserver(
+            forName: InputSettings.didChangeNotification,
+            object: InputSettings.shared,
+            queue: .main
+        ) { _ in
+            KeyboardModeState.shared.resetAll()
         }
     }
 

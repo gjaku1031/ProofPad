@@ -26,7 +26,7 @@ import QuartzCore
 //
 // === 입력 정책 ===
 //   - mouseDown 시점에 한 번 펜 여부 판정 (TabletEventRouter). 이후 mouseDragged는 activeTool만 체크.
-//   - mouseDown 시점 modifier로 도구 결정: ⌃ hold면 지우개, 그 외엔 PenSettings 따름.
+//   - mouseDown 시점 keymap으로 도구 결정: 기본 Control hold면 지우개, 그 외엔 PenSettings 따름.
 //
 // === Baked rebuild 트리거 ===
 //   - mouseUp (commitStroke): 새 stroke 추가됨
@@ -49,6 +49,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     private var lastLaidOutSize: CGSize = .zero
     private var pageStrokesObserver: NSObjectProtocol?
     private var keyboardModeObserver: NSObjectProtocol?
+    private var inputSettingsObserver: NSObjectProtocol?
     private var lastModifierFlags: NSEvent.ModifierFlags = []
     var isRenderingEnabled: Bool = true {
         didSet {
@@ -170,6 +171,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     deinit {
         unsubscribeFromPageStrokesChanges()
         unsubscribeFromKeyboardModeChanges()
+        unsubscribeFromInputSettingsChanges()
         DisplayLinkCoordinator.shared.unsubscribe(self)
     }
 
@@ -181,9 +183,11 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
             DisplayLinkCoordinator.shared.subscribe(self)
             subscribeToPageStrokesChanges()
             subscribeToKeyboardModeChanges()
+            subscribeToInputSettingsChanges()
         } else {
             unsubscribeFromPageStrokesChanges()
             unsubscribeFromKeyboardModeChanges()
+            unsubscribeFromInputSettingsChanges()
             DisplayLinkCoordinator.shared.unsubscribe(self)
         }
     }
@@ -229,6 +233,24 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         keyboardModeObserver = nil
     }
 
+    private func subscribeToInputSettingsChanges() {
+        guard inputSettingsObserver == nil else { return }
+        inputSettingsObserver = NotificationCenter.default.addObserver(
+            forName: InputSettings.didChangeNotification,
+            object: InputSettings.shared,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshCursorForCurrentState()
+        }
+    }
+
+    private func unsubscribeFromInputSettingsChanges() {
+        if let inputSettingsObserver {
+            NotificationCenter.default.removeObserver(inputSettingsObserver)
+        }
+        inputSettingsObserver = nil
+    }
+
     override func layout() {
         super.layout()
         let size = bounds.size
@@ -269,7 +291,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     override func mouseDown(with event: NSEvent) {
         lastModifierFlags = event.modifierFlags
         window?.makeFirstResponder(self)
-        if beginSpacePan(with: event) { return }
+        if beginMovePan(with: event) { return }
         guard TabletEventRouter.decide(event) == .pen else { return }
         Signposts.signposter.emitEvent("mouseDown")
         let p = pagePoint(for: event)
@@ -324,10 +346,10 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         // synthetic cursor는 liveActive가 false면 자연스럽게 안 그려짐.
     }
 
-    // MARK: - Space hold page pan
+    // MARK: - Hold-to-move page pan
 
-    private func beginSpacePan(with event: NSEvent) -> Bool {
-        guard KeyboardModeState.shared.isSpaceHeld,
+    private func beginMovePan(with event: NSEvent) -> Bool {
+        guard isMoveHoldActive(for: event.modifierFlags),
               let scrollView = enclosingScrollView else { return false }
         activePan = SpacePanGesture(scrollView: scrollView,
                                     startLocationInWindow: event.locationInWindow,
@@ -361,7 +383,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
                        y: min(max(origin.y, 0), maxY))
     }
 
-    // MARK: - Cursor: Control modifier → eraser cursor
+    // MARK: - Cursor: keymap-driven temporary modes
 
     override func flagsChanged(with event: NSEvent) {
         super.flagsChanged(with: event)
@@ -378,13 +400,23 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     private func refreshCursorForCurrentState() {
         // 드래그 중에는 커서 갱신 안 함 — 이미 mouseDown에서 결정한 상태 유지.
         guard activeTool == nil, activePan == nil else { return }
-        if KeyboardModeState.shared.isSpaceHeld {
+        if isMoveHoldActive(for: lastModifierFlags) {
             NSCursor.openHand.set()
-        } else if lastModifierFlags.contains(.control) {
+        } else if isEraserHoldActive(for: lastModifierFlags) {
             Self.eraserCursor.set()
         } else {
             NSCursor.arrow.set()
         }
+    }
+
+    private func isMoveHoldActive(for flags: NSEvent.ModifierFlags) -> Bool {
+        KeyboardModeState.shared.isMoveHeld ||
+            InputSettings.shared.moveHoldKey.matchesModifierFlags(flags)
+    }
+
+    private func isEraserHoldActive(for flags: NSEvent.ModifierFlags) -> Bool {
+        KeyboardModeState.shared.isEraserHeld ||
+            InputSettings.shared.eraserHoldKey.matchesModifierFlags(flags)
     }
 
     override func updateTrackingAreas() {

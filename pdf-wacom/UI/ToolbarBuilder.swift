@@ -4,14 +4,15 @@ import SwiftUI
 // host 윈도우 NSToolbar.
 // [P1|P2|P3|⌫ Eraser|Ink Feel] — 같은 펜을 한 번 더 클릭하면 색·두께 편집 popover.
 // Ink Feel은 새 stroke의 smoothing/pressure/latency 기본값을 조절하는 popover.
-// 우측: flattened PDF export.
+// 우측: keymap, PDF tools, flattened PDF export.
 final class ToolbarBuilder: NSObject, NSToolbarDelegate {
 
-    static let identifier = NSToolbar.Identifier("MainToolbar.v5")
+    static let identifier = NSToolbar.Identifier("MainToolbar.v6")
 
     enum ItemID {
         static let sidebar = NSToolbarItem.Identifier("sidebar")
         static let tools = NSToolbarItem.Identifier("tools")
+        static let keymap = NSToolbarItem.Identifier("keymap")
         static let pdfTools = NSToolbarItem.Identifier("pdfTools")
         static let exportPDF = NSToolbarItem.Identifier("exportPDF")
     }
@@ -33,6 +34,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     private weak var toolsControl: NSSegmentedControl?
     private var penEditorPopover: NSPopover?
     private var inkFeelPopover: NSPopover?
+    private var keymapPopover: NSPopover?
 
     // MARK: - NSToolbarDelegate
 
@@ -42,6 +44,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         switch itemIdentifier {
         case ItemID.sidebar:   return makeSidebarItem()
         case ItemID.tools:     return makeToolsItem()
+        case ItemID.keymap:    return makeKeymapItem()
         case ItemID.pdfTools:  return makePDFToolsItem()
         case ItemID.exportPDF: return makeExportItem()
         default:               return nil
@@ -49,11 +52,11 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.sidebar, .space, ItemID.tools, .flexibleSpace, ItemID.pdfTools, ItemID.exportPDF]
+        [ItemID.sidebar, .space, ItemID.tools, .flexibleSpace, ItemID.keymap, ItemID.pdfTools, ItemID.exportPDF]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.sidebar, ItemID.tools, ItemID.pdfTools, ItemID.exportPDF, .flexibleSpace, .space]
+        [ItemID.sidebar, ItemID.tools, ItemID.keymap, ItemID.pdfTools, ItemID.exportPDF, .flexibleSpace, .space]
     }
 
     // MARK: - Items
@@ -112,6 +115,24 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         item.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Export Flattened PDF")
         item.action = Selector(("exportPDF:"))
         item.target = nil
+        return item
+    }
+
+    private func makeKeymapItem() -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: ItemID.keymap)
+        item.label = "Keymap"
+        item.paletteLabel = "Keymap"
+        item.toolTip = "Keymap"
+
+        let button = NSButton(image: NSImage(systemSymbolName: "keyboard",
+                                             accessibilityDescription: "Keymap") ?? NSImage(),
+                              target: self,
+                              action: #selector(showKeymapPopover(_:)))
+        button.bezelStyle = .texturedRounded
+        button.imageScaling = .scaleProportionallyDown
+        button.toolTip = "Keymap"
+        button.frame = NSRect(x: 0, y: 0, width: 34, height: 28)
+        item.view = button
         return item
     }
 
@@ -214,6 +235,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     private func showPenEditorPopover(penIndex: Int, anchor: NSSegmentedControl) {
         dismissPenEditorPopover()
         dismissInkFeelPopover()
+        dismissKeymapPopover()
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
@@ -228,12 +250,29 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     private func showInkFeelPopover(anchor: NSSegmentedControl) {
         dismissPenEditorPopover()
         dismissInkFeelPopover()
+        dismissKeymapPopover()
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
         popover.contentViewController = NSHostingController(rootView: InkFeelEditorView())
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
         inkFeelPopover = popover
+    }
+
+    @objc private func showKeymapPopover(_ sender: NSButton) {
+        dismissPenEditorPopover()
+        dismissInkFeelPopover()
+        if keymapPopover?.isShown == true {
+            dismissKeymapPopover()
+            return
+        }
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = NSHostingController(rootView: KeymapSettingsView())
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        keymapPopover = popover
     }
 
     private func dismissPenEditorPopover() {
@@ -244,5 +283,10 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
     private func dismissInkFeelPopover() {
         inkFeelPopover?.close()
         inkFeelPopover = nil
+    }
+
+    private func dismissKeymapPopover() {
+        keymapPopover?.close()
+        keymapPopover = nil
     }
 }
