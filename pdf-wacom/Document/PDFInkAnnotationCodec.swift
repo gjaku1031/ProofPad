@@ -16,6 +16,7 @@ enum PDFInkAnnotationCodec {
         var id: UUID
         var color: ColorPayload
         var width: Double
+        var feel: InkFeelSettings.Snapshot?
         var createdAt: Double
         var points: [StrokePoint]
     }
@@ -100,6 +101,7 @@ private extension PDFInkAnnotationCodec.StoredStroke {
         self.id = stroke.id
         self.color = PDFInkAnnotationCodec.ColorPayload(stroke.color)
         self.width = Double(stroke.width)
+        self.feel = stroke.inkFeel
         self.createdAt = stroke.createdAt.timeIntervalSince1970
         self.points = stroke.points
     }
@@ -110,6 +112,7 @@ private extension PDFInkAnnotationCodec.StoredStroke {
             id: id,
             color: color.nsColor,
             width: CGFloat(width),
+            inkFeel: feel ?? .appDefault,
             createdAt: Date(timeIntervalSince1970: createdAt)
         )
         for point in points {

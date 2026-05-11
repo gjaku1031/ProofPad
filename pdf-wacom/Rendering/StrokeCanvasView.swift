@@ -434,7 +434,8 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         let halfWidth = InkStrokeDynamics.halfWidth(baseWidth: stroke.width,
                                                     viewScale: pageToViewScale,
                                                     point: point,
-                                                    previous: previous)
+                                                    previous: previous,
+                                                    feel: stroke.inkFeel)
         return MetalStrokeRenderer.StrokeSample(position: SIMD2<Float>(Float(v.x), Float(v.y)),
                                                 halfWidth: halfWidth)
     }

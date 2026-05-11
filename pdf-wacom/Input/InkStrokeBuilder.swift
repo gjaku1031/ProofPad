@@ -10,14 +10,16 @@ import Cocoa
 //   - bounded resampling: avoids duplicate points while filling long event gaps.
 struct InkStrokeBuilder {
     private let baseWidth: CGFloat
+    private let feel: InkFeelSettings.Snapshot
     private var lastRawPoint: CGPoint?
     private var lastRawTime: Float = 0
     private var smoothedPoint: CGPoint?
     private var smoothedPressure: Float = StrokePoint.defaultPressure
     private var lastEmittedPoint: StrokePoint?
 
-    init(baseWidth: CGFloat) {
+    init(baseWidth: CGFloat, feel: InkFeelSettings.Snapshot = .appDefault) {
         self.baseWidth = max(baseWidth, 0.5)
+        self.feel = feel.sanitized
     }
 
     mutating func begin(at pagePoint: CGPoint, time: Float, pressure: Float) -> StrokePoint {
@@ -48,7 +50,7 @@ struct InkStrokeBuilder {
         )
 
         let nextPressure = InkStrokeDynamics.normalizedPressure(pressure, fallback: smoothedPressure)
-        smoothedPressure += (nextPressure - smoothedPressure) * 0.35
+        smoothedPressure += (nextPressure - smoothedPressure) * Float(feel.pressureAlpha)
 
         lastRawPoint = rawPoint
         lastRawTime = time
@@ -113,7 +115,22 @@ struct InkStrokeBuilder {
 
     private func smoothingAlpha(forSpeed speed: CGFloat) -> CGFloat {
         let normalized = min(max((speed - 80) / 900, 0), 1)
-        return 0.32 + normalized * 0.46
+        let s = CGFloat(feel.sanitized.stabilization)
+        let minAlpha = piecewise(defaultValue: 0.32, lowValue: 0.68, highValue: 0.16, t: s)
+        let maxAlpha = piecewise(defaultValue: 0.78, lowValue: 0.92, highValue: 0.62, t: s)
+        return minAlpha + normalized * (maxAlpha - minAlpha)
+    }
+
+    private func piecewise(defaultValue: CGFloat,
+                           lowValue: CGFloat,
+                           highValue: CGFloat,
+                           t: CGFloat) -> CGFloat {
+        if t <= 0.5 {
+            let f = t / 0.5
+            return lowValue + (defaultValue - lowValue) * f
+        }
+        let f = (t - 0.5) / 0.5
+        return defaultValue + (highValue - defaultValue) * f
     }
 
     private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
@@ -136,22 +153,28 @@ enum InkStrokeDynamics {
     static func halfWidth(baseWidth: CGFloat,
                           viewScale: CGFloat,
                           point: StrokePoint,
-                          previous: StrokePoint?) -> Float {
+                          previous: StrokePoint?,
+                          feel: InkFeelSettings.Snapshot = .appDefault) -> Float {
+        let feel = feel.sanitized
         let pressure = CGFloat(normalizedPressure(point.pressure))
-        let pressureFactor = 0.58 + 0.60 * CGFloat(pow(Double(pressure), 0.72))
-        let speedFactor = widthSpeedFactor(point: point, previous: previous)
+        let defaultPressureFactor = 0.58 + 0.60 * CGFloat(pow(Double(pressure), 0.72))
+        let pressureFactor = 1.0 + (defaultPressureFactor - 1.0) * CGFloat(feel.pressureResponse)
+        let speedFactor = widthSpeedFactor(point: point, previous: previous, feel: feel)
         let width = max(baseWidth * viewScale * pressureFactor * speedFactor, 0.6)
         return Float(width * 0.5)
     }
 
-    private static func widthSpeedFactor(point: StrokePoint, previous: StrokePoint?) -> CGFloat {
+    private static func widthSpeedFactor(point: StrokePoint,
+                                         previous: StrokePoint?,
+                                         feel: InkFeelSettings.Snapshot) -> CGFloat {
         guard let previous else { return 1.0 }
         let dtMS = max(CGFloat(point.t - previous.t), 1)
         let dx = CGFloat(point.x - previous.x)
         let dy = CGFloat(point.y - previous.y)
         let speed = hypot(dx, dy) / dtMS * 1_000
         let normalized = min(max(speed / 2_200, 0), 1)
-        return 1.06 - normalized * 0.22
+        let defaultFactor = 1.06 - normalized * 0.22
+        return 1.0 + (defaultFactor - 1.0) * CGFloat(feel.speedThinning)
     }
 
     private static func normalizedFallback(_ fallback: Float) -> Float {

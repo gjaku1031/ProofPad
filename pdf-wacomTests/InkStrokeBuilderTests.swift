@@ -24,6 +24,20 @@ final class InkStrokeBuilderTests: XCTestCase {
         XCTAssertGreaterThan(points.last!.pressure, 0.1)
     }
 
+    func testPressureSmoothingSettingCanBeDisabled() {
+        let feel = InkFeelSettings.Snapshot(stabilization: 0.5,
+                                            pressureResponse: 1.0,
+                                            speedThinning: 1.0,
+                                            pressureStability: 0,
+                                            latencyLead: 1.0)
+        var builder = InkStrokeBuilder(baseWidth: 2, feel: feel)
+        _ = builder.begin(at: CGPoint(x: 0, y: 0), time: 0, pressure: 0.1)
+
+        let points = builder.append(to: CGPoint(x: 8, y: 0), time: 20, pressure: 1.0)
+
+        XCTAssertEqual(points.last!.pressure, 1.0, accuracy: 0.001)
+    }
+
     func testBuilderFillsLongEventGaps() {
         var builder = InkStrokeBuilder(baseWidth: 2)
         _ = builder.begin(at: CGPoint(x: 0, y: 0), time: 0, pressure: 0.5)
@@ -72,6 +86,29 @@ final class InkStrokeDynamicsTests: XCTestCase {
                                                     previous: previous)
 
         XCTAssertLessThan(fastWidth, slowWidth)
+    }
+
+    func testPressureResponseCanBeDisabled() {
+        let feel = InkFeelSettings.Snapshot(stabilization: 0.5,
+                                            pressureResponse: 0,
+                                            speedThinning: 1.0,
+                                            pressureStability: 0.65,
+                                            latencyLead: 1.0)
+        let light = StrokePoint(x: 0, y: 0, t: 0, pressure: 0.1)
+        let heavy = StrokePoint(x: 1, y: 0, t: 16, pressure: 1.0)
+
+        let lightWidth = InkStrokeDynamics.halfWidth(baseWidth: 2,
+                                                     viewScale: 1,
+                                                     point: light,
+                                                     previous: nil,
+                                                     feel: feel)
+        let heavyWidth = InkStrokeDynamics.halfWidth(baseWidth: 2,
+                                                     viewScale: 1,
+                                                     point: heavy,
+                                                     previous: nil,
+                                                     feel: feel)
+
+        XCTAssertEqual(lightWidth, heavyWidth, accuracy: 0.001)
     }
 
     func testZoomScaleAffectsRenderedWidth() {

@@ -17,10 +17,12 @@ final class PenTool: Tool {
     private var startTimestamp: TimeInterval = 0
 
     func mouseDown(at pagePoint: CGPoint, event: NSEvent, canvas: StrokeCanvasView) {
+        let inkFeel = InkFeelSettings.shared.current
         let stroke = Stroke(color: PenSettings.shared.currentColor,
-                            width: PenSettings.shared.currentWidth)
+                            width: PenSettings.shared.currentWidth,
+                            inkFeel: inkFeel)
         startTimestamp = event.timestamp
-        var builder = InkStrokeBuilder(baseWidth: stroke.width)
+        var builder = InkStrokeBuilder(baseWidth: stroke.width, feel: inkFeel)
         let point = builder.begin(at: pagePoint,
                                   time: 0,
                                   pressure: eventPressure(event))

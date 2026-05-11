@@ -16,6 +16,7 @@ final class PDFInkAnnotationCodecTests: XCTestCase {
 
         XCTAssertEqual(decoded.id, stroke.id)
         XCTAssertEqual(Float(decoded.width), Float(stroke.width), accuracy: 0.001)
+        XCTAssertEqual(decoded.inkFeel, stroke.inkFeel)
         XCTAssertEqual(decoded.points, stroke.points)
         XCTAssertEqual(decoded.createdAt.timeIntervalSince1970,
                        stroke.createdAt.timeIntervalSince1970,
@@ -47,6 +48,11 @@ final class PDFInkAnnotationCodecTests: XCTestCase {
             id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
             color: .systemRed,
             width: 2.5,
+            inkFeel: InkFeelSettings.Snapshot(stabilization: 0.7,
+                                              pressureResponse: 1.2,
+                                              speedThinning: 0.8,
+                                              pressureStability: 0.4,
+                                              latencyLead: 0.6),
             createdAt: Date(timeIntervalSince1970: 1234.5)
         )
         stroke.append(StrokePoint(x: 10, y: 20, t: 0))

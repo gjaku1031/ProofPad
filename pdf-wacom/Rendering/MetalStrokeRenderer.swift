@@ -119,8 +119,8 @@ final class MetalStrokeRenderer {
     // 다음 mouseDragged에서 즉시 보정되어 1 frame 내 사라짐.
     //
     // 구현: liveBuffer에 안 쓰고 매 draw마다 setVertexBytes로 transient upload — GPU race 회피.
-    private static let predictionStrength: Float = 1.0
     private var predictedTailVerts: [SIMD2<Float>] = []
+    private var livePredictionStrength: Float = 1.0
 
     // MARK: - Synthetic cursor
     //
@@ -160,6 +160,7 @@ final class MetalStrokeRenderer {
         liveLastSample = nil
         liveCount = 0
         liveActive = true
+        livePredictionStrength = Float(InkFeelSettings.shared.current.sanitized.latencyLead)
         let c = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
         liveColor = SIMD4<Float>(Float(c.redComponent),
                                  Float(c.greenComponent),
@@ -448,7 +449,8 @@ final class MetalStrokeRenderer {
         let deltaLen = simd_length(delta)
         guard deltaLen > 0.0001 else { return 0 }
 
-        let predictedPosition = last.position + delta * Self.predictionStrength
+        guard livePredictionStrength > 0 else { return 0 }
+        let predictedPosition = last.position + delta * livePredictionStrength
         let predicted = StrokeSample(position: predictedPosition, halfWidth: last.halfWidth)
         let segDir = predicted.position - last.position
         let segLen = simd_length(segDir)

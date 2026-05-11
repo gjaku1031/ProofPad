@@ -2,11 +2,12 @@ import Cocoa
 import SwiftUI
 
 // host 윈도우 NSToolbar.
-// [P1|P2|P3|⌫ Eraser] — 같은 펜을 한 번 더 클릭하면 그 펜 segment 아래에 색·두께 편집 popover.
+// [P1|P2|P3|⌫ Eraser|Ink Feel] — 같은 펜을 한 번 더 클릭하면 색·두께 편집 popover.
+// Ink Feel은 새 stroke의 smoothing/pressure/latency 기본값을 조절하는 popover.
 // 우측: flattened PDF export.
 final class ToolbarBuilder: NSObject, NSToolbarDelegate {
 
-    static let identifier = NSToolbar.Identifier("MainToolbar.v4")
+    static let identifier = NSToolbar.Identifier("MainToolbar.v5")
 
     enum ItemID {
         static let sidebar = NSToolbarItem.Identifier("sidebar")
@@ -30,6 +31,7 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
 
     private weak var toolsControl: NSSegmentedControl?
     private var penEditorPopover: NSPopover?
+    private var inkFeelPopover: NSPopover?
 
     // MARK: - NSToolbarDelegate
 
@@ -58,8 +60,8 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         let item = NSToolbarItem(itemIdentifier: ItemID.tools)
         item.label = "Tool"
         item.paletteLabel = "Tool"
-        // label은 비워두고 image로 통일 — pen 3개는 color swatch, 4번째는 SF Symbol eraser.
-        let control = NSSegmentedControl(labels: ["", "", "", ""],
+        // label은 비워두고 image로 통일 — pen 3개는 color swatch, 4번째는 eraser, 5번째는 feel settings.
+        let control = NSSegmentedControl(labels: ["", "", "", "", ""],
                                          trackingMode: .selectOne,
                                          target: self,
                                          action: #selector(toolsChanged(_:)))
@@ -68,10 +70,20 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
                                     accessibilityDescription: "Eraser") {
             control.setImage(eraserImg, forSegment: 3)
         }
+        if let settingsImg = NSImage(systemSymbolName: "slider.horizontal.3",
+                                     accessibilityDescription: "Ink Feel Settings") {
+            control.setImage(settingsImg, forSegment: 4)
+        }
         control.setWidth(36, forSegment: 0)
         control.setWidth(36, forSegment: 1)
         control.setWidth(36, forSegment: 2)
         control.setWidth(44, forSegment: 3)
+        control.setWidth(44, forSegment: 4)
+        control.setToolTip("Pen 1", forSegment: 0)
+        control.setToolTip("Pen 2", forSegment: 1)
+        control.setToolTip("Pen 3", forSegment: 2)
+        control.setToolTip("Eraser", forSegment: 3)
+        control.setToolTip("Ink Feel", forSegment: 4)
         control.translatesAutoresizingMaskIntoConstraints = false
         item.view = control
         self.toolsControl = control
@@ -140,6 +152,12 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         let idx = sender.selectedSegment
         let s = PenSettings.shared
 
+        if idx == 4 {
+            showInkFeelPopover(anchor: sender)
+            syncToolsControl()
+            return
+        }
+
         // action 직전 상태에서 "같은 segment 다시 클릭"인지 판정.
         let wasActivePen = (s.currentTool == .pen && s.currentPenIndex == idx && idx < 3)
         let wasActiveEraser = (s.currentTool == .eraser && idx == 3)
@@ -156,10 +174,12 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         } else {
             dismissPenEditorPopover()
         }
+        dismissInkFeelPopover()
     }
 
     private func showPenEditorPopover(penIndex: Int, anchor: NSSegmentedControl) {
         dismissPenEditorPopover()
+        dismissInkFeelPopover()
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
@@ -171,8 +191,24 @@ final class ToolbarBuilder: NSObject, NSToolbarDelegate {
         penEditorPopover = popover
     }
 
+    private func showInkFeelPopover(anchor: NSSegmentedControl) {
+        dismissPenEditorPopover()
+        dismissInkFeelPopover()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = NSHostingController(rootView: InkFeelEditorView())
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        inkFeelPopover = popover
+    }
+
     private func dismissPenEditorPopover() {
         penEditorPopover?.close()
         penEditorPopover = nil
+    }
+
+    private func dismissInkFeelPopover() {
+        inkFeelPopover?.close()
+        inkFeelPopover = nil
     }
 }

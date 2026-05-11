@@ -75,7 +75,8 @@ enum PDFFlattenExporter {
             let halfWidth = CGFloat(InkStrokeDynamics.halfWidth(baseWidth: stroke.width,
                                                                 viewScale: 1,
                                                                 point: first,
-                                                                previous: nil))
+                                                                previous: nil,
+                                                                feel: stroke.inkFeel))
             let center = CGPoint(x: CGFloat(first.x), y: CGFloat(first.y))
             ctx.fillEllipse(in: CGRect(x: center.x - halfWidth,
                                        y: center.y - halfWidth,
@@ -91,7 +92,8 @@ enum PDFFlattenExporter {
             let halfWidth = InkStrokeDynamics.halfWidth(baseWidth: stroke.width,
                                                         viewScale: 1,
                                                         point: point,
-                                                        previous: previous)
+                                                        previous: previous,
+                                                        feel: stroke.inkFeel)
             ctx.setLineWidth(CGFloat(halfWidth) * 2)
             ctx.move(to: CGPoint(x: CGFloat(previous.x), y: CGFloat(previous.y)))
             ctx.addLine(to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y)))

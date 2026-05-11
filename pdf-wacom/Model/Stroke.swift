@@ -19,14 +19,20 @@ final class Stroke {
     let id: UUID
     var color: NSColor
     var width: CGFloat
+    var inkFeel: InkFeelSettings.Snapshot
     let createdAt: Date
     private(set) var points: [StrokePoint] = []
     private(set) var bbox: CGRect = .null
 
-    init(id: UUID = UUID(), color: NSColor, width: CGFloat, createdAt: Date = Date()) {
+    init(id: UUID = UUID(),
+         color: NSColor,
+         width: CGFloat,
+         inkFeel: InkFeelSettings.Snapshot = .appDefault,
+         createdAt: Date = Date()) {
         self.id = id
         self.color = color
         self.width = width
+        self.inkFeel = inkFeel.sanitized
         self.createdAt = createdAt
     }
 
