@@ -127,6 +127,8 @@ final class MetalStrokeRenderer {
     private static let cursorThickness: Float = 1.5
     private static let cursorSegments = 24
     private var cursorVerts: [SIMD2<Float>] = []
+    /// 펜 모드에서만 true. 지우개 모드면 시스템 NSCursor가 eraser 모양으로 보이므로 중복 indicator 회피.
+    var renderSyntheticCursor: Bool = true
 
     static var isAvailable: Bool { MTLCreateSystemDefaultDevice() != nil }
 
@@ -466,8 +468,8 @@ final class MetalStrokeRenderer {
                     }
                 }
 
-                // 4) synthetic cursor — 마지막 live point에 도넛 모양 표시 (시스템 커서 lag 0 대체).
-                let cursorCount = buildCursorRing()
+                // 4) synthetic cursor — 펜 모드에서만 (지우개는 시스템 NSCursor가 표시).
+                let cursorCount = renderSyntheticCursor ? buildCursorRing() : 0
                 if cursorCount > 0 {
                     var cursorColor = SIMD4<Float>(0.15, 0.15, 0.18, 0.55)
                     encoder.setFragmentBytes(

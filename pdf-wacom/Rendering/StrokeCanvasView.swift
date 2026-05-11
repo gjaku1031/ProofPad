@@ -63,6 +63,45 @@ final class StrokeCanvasView: NSView {
     /// main thread에서만 read/write. CVDisplayLink 콜백은 DispatchQueue.main.async로 메인에 옴.
     private var presentScheduled = false
 
+    // MARK: - Cursor state
+    //
+    // 펜 모드: drag 동안 NSCursor.hide() — WindowServer 커서 lag을 시각에서 제거. 위치는 Metal synthetic ring으로 표시.
+    // 지우개 모드 (⌃ hold): 시스템 NSCursor를 eraser 모양으로 보여줌 (hide 안 함) — 지우개 위치를 사용자가 명확히 인식.
+    //
+    // Control 플래그 변화는 flagsChanged + cursorUpdate (NSTrackingArea)에서 감지해 NSCursor 갱신.
+    private var didHidePenCursor = false
+
+    /// SF Symbol "eraser.fill"을 NSCursor로. macOS NSCursor가 SF Symbol을 직접 받지 못해 bitmap으로 렌더링.
+    private static let eraserCursor: NSCursor = {
+        let pointSize: CGFloat = 22
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
+        guard let symbol = NSImage(systemSymbolName: "eraser.fill",
+                                    accessibilityDescription: "Eraser")?
+            .withSymbolConfiguration(config) else {
+            return .arrow
+        }
+        let pad: CGFloat = 4
+        let size = NSSize(width: ceil(symbol.size.width) + pad,
+                          height: ceil(symbol.size.height) + pad)
+        let img = NSImage(size: size, flipped: false) { _ in
+            let rect = NSRect(
+                x: (size.width - symbol.size.width) / 2,
+                y: (size.height - symbol.size.height) / 2,
+                width: symbol.size.width,
+                height: symbol.size.height
+            )
+            symbol.draw(in: rect,
+                        from: .zero,
+                        operation: .sourceOver,
+                        fraction: 1.0,
+                        respectFlipped: true,
+                        hints: nil)
+            return true
+        }
+        return NSCursor(image: img,
+                        hotSpot: NSPoint(x: size.width / 2, y: size.height / 2))
+    }()
+
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -159,13 +198,19 @@ final class StrokeCanvasView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard TabletEventRouter.decide(event) == .pen else { return }
         Signposts.signposter.emitEvent("mouseDown")
-        // 드로잉 중 시스템 커서 숨김. macOS의 cursor 표시 자체가 ink 렌더보다 한 박자 늦게 따라가는
-        // 경향이 있어 사용자가 "잉크가 펜을 못 따라잡는다"고 인식. ink 자체가 펜 위치 표시자.
-        // mouseUp에서 반드시 unhide. NSCursor.hide()/unhide()는 카운터식이라 짝 맞아야 함.
-        NSCursor.hide()
         let p = pagePoint(for: event)
         let tool = toolController.tool(forModifierFlags: event.modifierFlags)
         activeTool = tool
+        let isEraser = tool is EraserTool
+        // 펜 모드일 때만 시스템 커서 hide — 사용자가 ink를 펜 위치 indicator로 사용 + Metal synthetic ring.
+        // 지우개 모드 (⌃ hold)는 시스템 NSCursor가 eraser 모양이라 그대로 보여줘야 함.
+        if !isEraser {
+            NSCursor.hide()
+            didHidePenCursor = true
+            metalRenderer?.renderSyntheticCursor = true
+        } else {
+            metalRenderer?.renderSyntheticCursor = false
+        }
         tool.mouseDown(at: p, event: event, canvas: self)
     }
 
@@ -186,7 +231,46 @@ final class StrokeCanvasView: NSView {
         let p = pagePoint(for: event)
         activeTool?.mouseUp(at: p, event: event, canvas: self)
         activeTool = nil
-        NSCursor.unhide()
+        // 펜 모드에서 hide했을 때만 paired unhide.
+        if didHidePenCursor {
+            NSCursor.unhide()
+            didHidePenCursor = false
+        }
+        // synthetic cursor는 liveActive가 false면 자연스럽게 안 그려짐.
+    }
+
+    // MARK: - Cursor: Control modifier → eraser cursor
+
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        refreshCursorForModifiers(event.modifierFlags)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        // Tracking area의 .cursorUpdate 옵션이 트리거. 마우스가 view 영역에 들어올 때 커서 set.
+        refreshCursorForModifiers(event.modifierFlags)
+    }
+
+    private func refreshCursorForModifiers(_ flags: NSEvent.ModifierFlags) {
+        // 드래그 중에는 커서 갱신 안 함 — 이미 mouseDown에서 결정한 상태 유지.
+        guard activeTool == nil else { return }
+        if flags.contains(.control) {
+            Self.eraserCursor.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
     }
 
     // MARK: - Coord transforms (view ↔ page)

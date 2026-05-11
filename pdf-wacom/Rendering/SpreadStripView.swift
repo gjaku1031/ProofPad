@@ -240,6 +240,22 @@ final class SpreadStripView: NSView {
         zoomMode = .custom(newScale)
     }
 
+    /// ⌘ + scroll wheel = zoom. 일반 scroll은 NSScrollView 동작.
+    override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            // deltaY 양수=위로 스크롤=확대. trackpad/마우스 mode 모두에서 자연스럽게.
+            // 1단위당 ~3% 확대/축소. 빠른 스크롤도 너무 격렬해지지 않게 dampen.
+            let delta = event.scrollingDeltaY
+            guard abs(delta) > 0.01 else { return }
+            let factor = 1.0 + (delta * 0.03).clampedTo(min: -0.5, max: 0.5)
+            let newScale = (currentEffectiveScale() * factor)
+                .clampedTo(min: 0.25, max: 8.0)
+            zoomMode = .custom(newScale)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
     private func currentEffectiveScale() -> CGFloat {
         guard let referenceSpread = spreadViews.first?.spread,
               let page = referenceSpread.leftPage ?? referenceSpread.rightPage else { return 1.0 }
