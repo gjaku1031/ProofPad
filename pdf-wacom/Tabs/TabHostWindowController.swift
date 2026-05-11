@@ -244,16 +244,13 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         TabSession.save(documents: documents)
     }
 
-    func moveTab(document: PDFInkDocument, to insertionIndex: Int) {
+    func moveTab(document: PDFInkDocument, toFinalIndex targetIndex: Int) {
         guard let sourceIndex = documents.firstIndex(where: { $0 === document }) else { return }
-        let boundedInsertionIndex = min(max(insertionIndex, 0), documents.count)
-        let targetIndex = boundedInsertionIndex > sourceIndex
-            ? boundedInsertionIndex - 1
-            : boundedInsertionIndex
-        guard targetIndex != sourceIndex else { return }
+        let boundedTargetIndex = min(max(targetIndex, 0), documents.count - 1)
+        guard boundedTargetIndex != sourceIndex else { return }
 
         let moved = documents.remove(at: sourceIndex)
-        documents.insert(moved, at: targetIndex)
+        documents.insert(moved, at: boundedTargetIndex)
         tabBarView.reload()
         TabSession.save(documents: documents)
     }

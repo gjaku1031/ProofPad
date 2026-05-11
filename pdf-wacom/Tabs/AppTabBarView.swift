@@ -17,6 +17,22 @@ final class AppTabBarView: NSView {
     private let chipSpacing: CGFloat = 4
     private let maxChipWidth: CGFloat = 220
     private let minChipWidth: CGFloat = 90
+    private var dragSession: TabDragSession?
+
+    private struct TabLayoutMetrics {
+        var chipWidth: CGFloat
+        var chipHeight: CGFloat
+        var contentWidth: CGFloat
+    }
+
+    private struct TabDragSession {
+        weak var chip: TabChipView?
+        let document: PDFInkDocument
+        let sourceIndex: Int
+        let startFrame: NSRect
+        let startLocationInWindow: NSPoint
+        var targetIndex: Int
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -54,6 +70,7 @@ final class AppTabBarView: NSView {
 
     func reload() {
         guard let host = host else { return }
+        dragSession = nil
         chips.forEach { $0.removeFromSuperview() }
         homeButton.isHomeActive = host.activeDocument == nil
         chips = host.documents.map { doc in
@@ -67,8 +84,15 @@ final class AppTabBarView: NSView {
                 )
                 _ = host  // capture
             }
-            chip.onDrop = { [weak self] document, windowPoint in
-                self?.drop(document: document, at: windowPoint)
+            chip.onBeginDrag = { [weak self, weak chip] startLocation in
+                guard let chip else { return }
+                self?.beginInteractiveDrag(chip: chip, document: doc, startLocationInWindow: startLocation)
+            }
+            chip.onContinueDrag = { [weak self] event in
+                self?.updateInteractiveDrag(with: event)
+            }
+            chip.onEndDrag = { [weak self] in
+                self?.endInteractiveDrag()
             }
             chipContainerView.addSubview(chip)
             return chip
@@ -84,31 +108,197 @@ final class AppTabBarView: NSView {
         homeButton.frame = NSRect(x: horizontalMargin, y: 2, width: homeButtonWidth, height: barHeight)
         scrollView.frame = NSRect(x: chipAreaX, y: 2, width: chipAreaWidth, height: barHeight)
 
+        layoutChips(animated: false)
+    }
+
+    private func currentLayoutMetrics() -> TabLayoutMetrics {
         let n = chips.count
-        guard n > 0 else { return }
         let availWidth = chipAreaWidth
+        guard n > 0 else {
+            return TabLayoutMetrics(
+                chipWidth: minChipWidth,
+                chipHeight: scrollView.contentView.bounds.height,
+                contentWidth: availWidth
+            )
+        }
         let totalSpacing = chipSpacing * CGFloat(max(n - 1, 0))
         var chipWidth = (availWidth - totalSpacing) / CGFloat(n)
         chipWidth = min(chipWidth, maxChipWidth)
         chipWidth = max(chipWidth, minChipWidth)
         let contentWidth = max(availWidth, chipWidth * CGFloat(n) + totalSpacing)
         let chipHeight = scrollView.contentView.bounds.height
-        chipContainerView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: chipHeight)
+        return TabLayoutMetrics(chipWidth: chipWidth, chipHeight: chipHeight, contentWidth: contentWidth)
+    }
 
-        var x: CGFloat = 0
-        for chip in chips {
-            chip.frame = NSRect(x: x, y: 2, width: chipWidth, height: chipHeight)
-            x += chipWidth + chipSpacing
+    private var chipAreaWidth: CGFloat {
+        max(0, bounds.width - (horizontalMargin + homeButtonWidth + homeSpacing) - horizontalMargin)
+    }
+
+    private func layoutChips(animated: Bool) {
+        let n = chips.count
+        guard n > 0 else {
+            chipContainerView.frame = NSRect(x: 0, y: 0, width: chipAreaWidth, height: scrollView.contentView.bounds.height)
+            return
+        }
+        let metrics = currentLayoutMetrics()
+        chipContainerView.frame = NSRect(x: 0, y: 0, width: metrics.contentWidth, height: metrics.chipHeight)
+
+        let frames = targetFrames(metrics: metrics)
+        apply(frames: frames, animated: animated, duration: 0.13)
+    }
+
+    private func targetFrames(metrics: TabLayoutMetrics) -> [(TabChipView, NSRect)] {
+        guard let dragSession, let draggedChip = dragSession.chip else {
+            return chips.enumerated().map { index, chip in
+                (chip, frameForSlot(index, metrics: metrics))
+            }
+        }
+
+        var frames: [(TabChipView, NSRect)] = []
+        var compactIndex = 0
+        for chip in chips where chip !== draggedChip {
+            let slot = compactIndex >= dragSession.targetIndex ? compactIndex + 1 : compactIndex
+            frames.append((chip, frameForSlot(slot, metrics: metrics)))
+            compactIndex += 1
+        }
+        return frames
+    }
+
+    private func frameForSlot(_ index: Int, metrics: TabLayoutMetrics) -> NSRect {
+        NSRect(
+            x: CGFloat(index) * (metrics.chipWidth + chipSpacing),
+            y: 2,
+            width: metrics.chipWidth,
+            height: metrics.chipHeight
+        )
+    }
+
+    private func apply(frames: [(TabChipView, NSRect)], animated: Bool, duration: TimeInterval) {
+        guard animated else {
+            for (chip, frame) in frames {
+                chip.frame = frame
+            }
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            for (chip, frame) in frames {
+                chip.animator().frame = frame
+            }
         }
     }
 
-    private func drop(document: PDFInkDocument, at windowPoint: NSPoint) {
-        let local = convert(windowPoint, from: nil)
-        let chipLocal = chipContainerView.convert(local, from: self)
-        let insertionIndex = chips.firstIndex { chip in
-            chipLocal.x < chip.frame.midX
-        } ?? chips.count
-        host?.moveTab(document: document, to: insertionIndex)
+    private func beginInteractiveDrag(chip: TabChipView,
+                                      document: PDFInkDocument,
+                                      startLocationInWindow: NSPoint) {
+        guard dragSession == nil,
+              let sourceIndex = chips.firstIndex(where: { $0 === chip }) else { return }
+        dragSession = TabDragSession(
+            chip: chip,
+            document: document,
+            sourceIndex: sourceIndex,
+            startFrame: chip.frame,
+            startLocationInWindow: startLocationInWindow,
+            targetIndex: sourceIndex
+        )
+        chip.setDraggingAppearance(true)
+        NSCursor.closedHand.set()
+    }
+
+    private func updateInteractiveDrag(with event: NSEvent) {
+        guard var session = dragSession, let chip = session.chip else { return }
+
+        let metrics = currentLayoutMetrics()
+        let start = chipContainerView.convert(session.startLocationInWindow, from: nil)
+        let current = chipContainerView.convert(event.locationInWindow, from: nil)
+        let deltaX = current.x - start.x
+        let deltaY = max(-5, min(5, current.y - start.y))
+
+        var frame = session.startFrame
+        frame.origin.x = session.startFrame.origin.x + deltaX
+        frame.origin.y = session.startFrame.origin.y + deltaY
+
+        let minX = -metrics.chipWidth * 0.45
+        let maxX = max(minX, metrics.contentWidth - metrics.chipWidth * 0.55)
+        frame.origin.x = min(max(frame.origin.x, minX), maxX)
+        chip.frame = frame
+
+        autoscrollIfNeeded(for: frame)
+
+        let targetIndex = targetIndex(forDraggedMidX: frame.midX, metrics: metrics)
+        if targetIndex != session.targetIndex {
+            session.targetIndex = targetIndex
+            dragSession = session
+            layoutChips(animated: true)
+        } else {
+            dragSession = session
+        }
+        NSCursor.closedHand.set()
+    }
+
+    private func targetIndex(forDraggedMidX midX: CGFloat, metrics: TabLayoutMetrics) -> Int {
+        guard !chips.isEmpty else { return 0 }
+        for index in chips.indices {
+            if midX <= frameForSlot(index, metrics: metrics).midX {
+                return index
+            }
+        }
+        return max(chips.count - 1, 0)
+    }
+
+    private func autoscrollIfNeeded(for draggedFrame: NSRect) {
+        let clipView = scrollView.contentView
+        let visible = clipView.bounds
+        let maxOffset = max(0, chipContainerView.bounds.width - visible.width)
+        guard maxOffset > 0 else { return }
+
+        let edgePadding: CGFloat = 36
+        var origin = visible.origin
+        if draggedFrame.maxX > visible.maxX - edgePadding {
+            origin.x += min(18, draggedFrame.maxX - (visible.maxX - edgePadding))
+        } else if draggedFrame.minX < visible.minX + edgePadding {
+            origin.x -= min(18, (visible.minX + edgePadding) - draggedFrame.minX)
+        }
+        origin.x = min(max(origin.x, 0), maxOffset)
+        guard abs(origin.x - visible.origin.x) > 0.5 else { return }
+        clipView.scroll(to: origin)
+        scrollView.reflectScrolledClipView(clipView)
+    }
+
+    private func endInteractiveDrag() {
+        guard let session = dragSession, let chip = session.chip else {
+            dragSession = nil
+            return
+        }
+        let targetIndex = session.targetIndex
+        let metrics = currentLayoutMetrics()
+        let finalFrame = targetIndex == session.sourceIndex
+            ? session.startFrame
+            : frameForSlot(targetIndex, metrics: metrics)
+        dragSession = nil
+
+        let normalFrames = targetIndex == session.sourceIndex
+            ? targetFrames(metrics: metrics)
+            : []
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.11
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            chip.animator().frame = finalFrame
+            for (otherChip, frame) in normalFrames where otherChip !== chip {
+                otherChip.animator().frame = frame
+            }
+        } completionHandler: { [weak self, weak chip] in
+            chip?.setDraggingAppearance(false)
+            guard let self else { return }
+            if targetIndex != session.sourceIndex {
+                self.host?.moveTab(document: session.document, toFinalIndex: targetIndex)
+            } else {
+                self.needsLayout = true
+            }
+        }
     }
 }
 
@@ -162,7 +352,9 @@ final class TabChipView: NSView {
     private var isDraggingTab = false
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
-    var onDrop: ((PDFInkDocument, NSPoint) -> Void)?
+    var onBeginDrag: ((NSPoint) -> Void)?
+    var onContinueDrag: ((NSEvent) -> Void)?
+    var onEndDrag: (() -> Void)?
 
     init(document: PDFInkDocument, isActive: Bool) {
         self.document = document
@@ -230,6 +422,15 @@ final class TabChipView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     override var mouseDownCanMoveWindow: Bool { false }
 
+    func setDraggingAppearance(_ isDragging: Bool) {
+        alphaValue = isDragging ? 0.96 : 1
+        layer?.zPosition = isDragging ? 100 : 0
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = isDragging ? 0.22 : 0
+        layer?.shadowRadius = isDragging ? 8 : 0
+        layer?.shadowOffset = NSSize(width: 0, height: -2)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach { removeTrackingArea($0) }
@@ -284,8 +485,9 @@ final class TabChipView: NSView {
         guard distance >= 6 else { return }
         if !isDraggingTab {
             isDraggingTab = true
-            alphaValue = 0.72
+            onBeginDrag?(start)
         }
+        onContinueDrag?(event)
         NSCursor.closedHand.set()
     }
 
@@ -293,10 +495,9 @@ final class TabChipView: NSView {
         defer {
             dragStartLocationInWindow = nil
             isDraggingTab = false
-            alphaValue = 1
         }
         if isDraggingTab {
-            onDrop?(document, event.locationInWindow)
+            onEndDrag?()
         } else if dragStartLocationInWindow != nil {
             onSelect?()
         }

@@ -17,30 +17,36 @@ final class TabChipInteractionTests: XCTestCase {
     func testClickSelectsOnMouseUp() {
         let chip = makeChip()
         var selectCount = 0
-        var dropCount = 0
+        var dragEndCount = 0
         chip.onSelect = { selectCount += 1 }
-        chip.onDrop = { _, _ in dropCount += 1 }
+        chip.onEndDrag = { dragEndCount += 1 }
 
         chip.mouseDown(with: mouseEvent(type: .leftMouseDown, x: 20, y: 12))
         chip.mouseUp(with: mouseEvent(type: .leftMouseUp, x: 21, y: 12))
 
         XCTAssertEqual(selectCount, 1)
-        XCTAssertEqual(dropCount, 0)
+        XCTAssertEqual(dragEndCount, 0)
     }
 
-    func testDragDropsWithoutSelecting() {
+    func testDragReordersWithoutSelecting() {
         let chip = makeChip()
         var selectCount = 0
-        var dropCount = 0
+        var beginDragCount = 0
+        var continueDragCount = 0
+        var endDragCount = 0
         chip.onSelect = { selectCount += 1 }
-        chip.onDrop = { _, _ in dropCount += 1 }
+        chip.onBeginDrag = { _ in beginDragCount += 1 }
+        chip.onContinueDrag = { _ in continueDragCount += 1 }
+        chip.onEndDrag = { endDragCount += 1 }
 
         chip.mouseDown(with: mouseEvent(type: .leftMouseDown, x: 20, y: 12))
         chip.mouseDragged(with: mouseEvent(type: .leftMouseDragged, x: 80, y: 12))
         chip.mouseUp(with: mouseEvent(type: .leftMouseUp, x: 80, y: 12))
 
         XCTAssertEqual(selectCount, 0)
-        XCTAssertEqual(dropCount, 1)
+        XCTAssertEqual(beginDragCount, 1)
+        XCTAssertEqual(continueDragCount, 1)
+        XCTAssertEqual(endDragCount, 1)
     }
 
     private func makeChip() -> TabChipView {
