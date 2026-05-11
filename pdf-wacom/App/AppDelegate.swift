@@ -140,15 +140,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func restoreSessionOrPromptOpen() {
+        let preopenedDocuments = NSDocumentController.shared.documents.compactMap { $0 as? PDFInkDocument }
+        if !preopenedDocuments.isEmpty {
+            preopenedDocuments.forEach { TabHostWindowController.shared.add(document: $0) }
+            return
+        }
+
         let urls = TabSession.loadURLs()
         if urls.isEmpty {
-            if NSDocumentController.shared.documents.isEmpty {
-                TabHostWindowController.shared.showHome(nil)
-            }
+            TabHostWindowController.shared.showHome(nil)
             return
         }
         for url in urls {
-            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { document, _, _ in
+                guard let document = document as? PDFInkDocument else { return }
+                if !TabHostWindowController.shared.documents.contains(where: { $0 === document }) {
+                    TabHostWindowController.shared.add(document: document)
+                }
+            }
         }
     }
 
@@ -189,6 +198,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldRestoreApplicationState(_ app: NSApplication) -> Bool {
+        false
+    }
+
+    func applicationShouldSaveApplicationState(_ app: NSApplication) -> Bool {
         false
     }
 

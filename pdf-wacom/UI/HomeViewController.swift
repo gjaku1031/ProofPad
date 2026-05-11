@@ -9,11 +9,16 @@ final class HomeViewController: NSViewController {
     var onOpenRecent: ((URL) -> Void)?
 
     private let recentStack = NSStackView()
+    private var recentRows: [RecentFileRow] = []
     private var recentStoreObserver: NSObjectProtocol?
+    private var recentClickMonitor: Any?
 
     deinit {
         if let recentStoreObserver {
             NotificationCenter.default.removeObserver(recentStoreObserver)
+        }
+        if let recentClickMonitor {
+            NSEvent.removeMonitor(recentClickMonitor)
         }
     }
 
@@ -67,6 +72,7 @@ final class HomeViewController: NSViewController {
         ) { [weak self] _ in
             self?.reloadRecentFiles()
         }
+        installRecentClickMonitor()
     }
 
     override func viewWillAppear() {
@@ -79,6 +85,7 @@ final class HomeViewController: NSViewController {
             recentStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
+        recentRows.removeAll()
 
         let recentURLs = RecentPDFStore.shared.recentURLs()
 
@@ -93,6 +100,7 @@ final class HomeViewController: NSViewController {
             let row = RecentFileRow(url: url) { [weak self] selectedURL in
                 self?.onOpenRecent?(selectedURL)
             }
+            recentRows.append(row)
             recentStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: recentStack.widthAnchor).isActive = true
         }
@@ -267,6 +275,29 @@ final class HomeViewController: NSViewController {
         return container
     }
 
+    private func installRecentClickMonitor() {
+        recentClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self,
+                  self.view.window === event.window else {
+                return event
+            }
+
+            guard let window = self.view.window,
+                  event.window == nil || event.window === window else {
+                return event
+            }
+
+            for row in self.recentRows where row.window === window {
+                let rowPoint = row.convert(event.locationInWindow, from: nil)
+                if row.bounds.contains(rowPoint) {
+                    row.openFromMouseClick()
+                    return nil
+                }
+            }
+            return event
+        }
+    }
+
     @objc private func openDocumentTapped() {
         onOpenDocument?()
     }
@@ -324,30 +355,26 @@ private final class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
-final class RecentFileRow: NSButton {
+final class RecentFileRow: NSControl {
     private let url: URL
     private let onOpen: (URL) -> Void
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let pathLabel = NSTextField(labelWithString: "")
     private var isHovering = false
+    private var isPressed = false
 
     init(url: URL, onOpen: @escaping (URL) -> Void) {
         self.url = url
         self.onOpen = onOpen
         super.init(frame: .zero)
-        title = ""
-        isBordered = false
-        bezelStyle = .regularSquare
-        setButtonType(.momentaryPushIn)
-        sendAction(on: [.leftMouseUp])
-        target = self
-        action = #selector(openRecent)
         wantsLayer = true
         layer?.cornerRadius = 7
         toolTip = url.path
         translatesAutoresizingMaskIntoConstraints = false
+        setContentHuggingPriority(.defaultLow, for: .horizontal)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(url.deletingPathExtension().lastPathComponent)
 
-        let icon = NSImageView()
+        let icon = NonHitTestingImageView()
         icon.image = NSWorkspace.shared.icon(forFile: url.path)
         icon.imageScaling = .scaleProportionallyDown
         icon.translatesAutoresizingMaskIntoConstraints = false
@@ -360,19 +387,17 @@ final class RecentFileRow: NSButton {
         textStack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(textStack)
 
-        titleLabel.stringValue = url.deletingPathExtension().lastPathComponent
+        let titleLabel = NonHitTestingLabel(labelWithString: url.deletingPathExtension().lastPathComponent)
         titleLabel.font = .systemFont(ofSize: 13.5, weight: .medium)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
-        titleLabel.isSelectable = false
         textStack.addArrangedSubview(titleLabel)
 
-        pathLabel.stringValue = url.deletingLastPathComponent().path
+        let pathLabel = NonHitTestingLabel(labelWithString: url.deletingLastPathComponent().path)
         pathLabel.font = .systemFont(ofSize: 11.5)
         pathLabel.textColor = .secondaryLabelColor
         pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.maximumNumberOfLines = 1
-        pathLabel.isSelectable = false
         textStack.addArrangedSubview(pathLabel)
 
         NSLayoutConstraint.activate([
@@ -405,6 +430,25 @@ final class RecentFileRow: NSButton {
         bounds.contains(point) ? self : nil
     }
 
+    override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        updateBackground()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let shouldOpen = bounds.contains(convert(event.locationInWindow, from: nil))
+        isPressed = false
+        updateBackground()
+        if shouldOpen {
+            openRecent()
+        }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        openRecent()
+        return true
+    }
+
     override func mouseEntered(with event: NSEvent) {
         isHovering = true
         updateBackground()
@@ -428,13 +472,33 @@ final class RecentFileRow: NSButton {
         onOpen(url)
     }
 
+    func openFromMouseClick() {
+        isPressed = true
+        updateBackground()
+        openRecent()
+        isPressed = false
+        updateBackground()
+    }
+
     private func updateBackground() {
-        if isHighlighted {
+        if isPressed || isHighlighted {
             layer?.backgroundColor = NSColor.selectedContentBackgroundColor.withAlphaComponent(0.22).cgColor
         } else if isHovering {
             layer?.backgroundColor = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.72).cgColor
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
         }
+    }
+}
+
+private final class NonHitTestingImageView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+private final class NonHitTestingLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return nil
     }
 }
