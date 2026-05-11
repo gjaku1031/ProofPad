@@ -9,9 +9,9 @@ enum TabletEventRouter {
     }
 
     static func decide(_ event: NSEvent) -> Decision {
-        // [A/B 테스트 모드] 마우스/트랙패드도 그리기 허용 — 깜빡임 원인이 input 단인지 render 단인지 분기.
-        // 정상 동작 (Wacom 펜만 그리기)으로 돌리려면 아래 줄을 다음으로 교체:
-        //   guard event.subtype == .tabletPoint else { return .ignore }
+        // tabletPoint subtype이 실린 mouse 이벤트만 펜으로 인정한다.
+        // Wacom 드라이버 미설치 환경에서는 tabletPoint가 안 들어와 자연스럽게 ignore.
+        guard event.subtype == .tabletPoint else { return .ignore }
         return .pen
     }
 }
