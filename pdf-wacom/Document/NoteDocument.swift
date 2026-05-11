@@ -170,19 +170,36 @@ final class NoteDocument: NSDocument {
                           code: NSFileReadCorruptFileError,
                           userInfo: [NSLocalizedDescriptionKey: "source.pdf를 읽을 수 없습니다."])
         }
+        try Self.validate(manifest: manifest, pdfPageCount: pdf.pageCount)
+
+        var decodedStrokes: [Int: PageStrokes] = [:]
+        if let strokesDir = children["strokes"], let files = strokesDir.fileWrappers {
+            for (name, wrapper) in files {
+                guard name.hasPrefix("page-") else { continue }
+                guard let expectedPageIndex = Self.pageIndex(fromStrokeFileName: name) else {
+                    throw Self.corruptFileError("잘못된 stroke 파일 이름입니다: \(name)")
+                }
+                guard let data = wrapper.regularFileContents else {
+                    throw Self.corruptFileError("stroke 파일을 읽을 수 없습니다: \(name)")
+                }
+                let ps = try StrokeCodec.decode(data)
+                guard ps.pageIndex == expectedPageIndex else {
+                    throw Self.corruptFileError("stroke 파일 이름과 내부 pageIndex가 다릅니다: \(name)")
+                }
+                guard ps.pageIndex >= 0, ps.pageIndex < pdf.pageCount else {
+                    throw Self.corruptFileError("PDF 페이지 범위를 벗어난 stroke 파일입니다: \(name)")
+                }
+                guard decodedStrokes[ps.pageIndex] == nil else {
+                    throw Self.corruptFileError("중복된 stroke 페이지입니다: \(name)")
+                }
+                decodedStrokes[ps.pageIndex] = ps
+            }
+        }
+
         self.manifest = manifest
         self.pdfDocument = pdf
         self.originalPDFData = pdfData
-        self.pageStrokesMap = [:]
-
-        if let strokesDir = children["strokes"], let files = strokesDir.fileWrappers {
-            for (name, wrapper) in files {
-                guard name.hasPrefix("page-"), name.hasSuffix(".bin") else { continue }
-                guard let data = wrapper.regularFileContents else { continue }
-                let ps = try StrokeCodec.decode(data)
-                self.pageStrokesMap[ps.pageIndex] = ps
-            }
-        }
+        self.pageStrokesMap = decodedStrokes
     }
 
     private func readImportedPDF(_ wrapper: FileWrapper) throws {
@@ -238,6 +255,32 @@ final class NoteDocument: NSDocument {
         children["strokes"] = FileWrapper(directoryWithFileWrappers: strokeChildren)
 
         return FileWrapper(directoryWithFileWrappers: children)
+    }
+
+    private static func validate(manifest: NoteManifest, pdfPageCount: Int) throws {
+        guard manifest.pageCount == pdfPageCount else {
+            throw corruptFileError("manifest pageCount와 source.pdf 페이지 수가 다릅니다.")
+        }
+        if let pagesPerSpread = manifest.pagesPerSpread,
+           pagesPerSpread != 1 && pagesPerSpread != 2 {
+            throw corruptFileError("manifest pagesPerSpread 값이 올바르지 않습니다.")
+        }
+    }
+
+    private static func pageIndex(fromStrokeFileName name: String) -> Int? {
+        guard name.hasPrefix("page-"), name.hasSuffix(".bin") else { return nil }
+        let start = name.index(name.startIndex, offsetBy: 5)
+        let end = name.index(name.endIndex, offsetBy: -4)
+        guard start < end else { return nil }
+        let digits = name[start..<end]
+        guard digits.allSatisfy(\.isWholeNumber) else { return nil }
+        return Int(digits)
+    }
+
+    private static func corruptFileError(_ description: String) -> NSError {
+        NSError(domain: NSCocoaErrorDomain,
+                code: NSFileReadCorruptFileError,
+                userInfo: [NSLocalizedDescriptionKey: description])
     }
 
 }

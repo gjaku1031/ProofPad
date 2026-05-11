@@ -13,6 +13,9 @@ enum StrokeCodec {
         case truncated
         case badMagic
         case unsupportedVersion(UInt16)
+        case trailingData
+        case invalidCount
+        case invalidNumber
     }
 
     static func encode(_ pageStrokes: PageStrokes) -> Data {
@@ -47,6 +50,10 @@ enum StrokeCodec {
         guard version == Self.version else { throw DecodeError.unsupportedVersion(version) }
         let pageIndex: UInt32 = try data.readLE(at: &cursor)
         let strokeCount: UInt32 = try data.readLE(at: &cursor)
+        guard Int(strokeCount) <= (data.endIndex - cursor) / Self.minimumEncodedStrokeByteCount else {
+            throw DecodeError.truncated
+        }
+
         let result = PageStrokes(pageIndex: Int(pageIndex))
         for _ in 0..<Int(strokeCount) {
             let id = try data.readUUID(at: &cursor)
@@ -57,27 +64,44 @@ enum StrokeCodec {
             let widthBits: UInt32 = try data.readLE(at: &cursor)
             let createdAtBits: UInt64 = try data.readLE(at: &cursor)
             let pointCount: UInt32 = try data.readLE(at: &cursor)
+            guard Int(pointCount) <= Self.maximumPointCountPerStroke else { throw DecodeError.invalidCount }
+            guard Int(pointCount) <= (data.endIndex - cursor) / Self.encodedPointByteCount else {
+                throw DecodeError.truncated
+            }
+
+            let width = Float(bitPattern: widthBits)
+            let createdAt = Double(bitPattern: createdAtBits)
+            guard width.isFinite, width > 0, createdAt.isFinite else { throw DecodeError.invalidNumber }
 
             let stroke = Stroke(
                 id: id,
                 color: NSColor(rgba255: (r, g, b, a)),
-                width: CGFloat(Float(bitPattern: widthBits)),
-                createdAt: Date(timeIntervalSince1970: Double(bitPattern: createdAtBits))
+                width: CGFloat(width),
+                createdAt: Date(timeIntervalSince1970: createdAt)
             )
             for _ in 0..<Int(pointCount) {
                 let xBits: UInt32 = try data.readLE(at: &cursor)
                 let yBits: UInt32 = try data.readLE(at: &cursor)
                 let tBits: UInt32 = try data.readLE(at: &cursor)
+                let x = Float(bitPattern: xBits)
+                let y = Float(bitPattern: yBits)
+                let t = Float(bitPattern: tBits)
+                guard x.isFinite, y.isFinite, t.isFinite else { throw DecodeError.invalidNumber }
                 stroke.append(StrokePoint(
-                    x: Float(bitPattern: xBits),
-                    y: Float(bitPattern: yBits),
-                    t: Float(bitPattern: tBits)
+                    x: x,
+                    y: y,
+                    t: t
                 ))
             }
-            result.add(stroke)
+            result.add(stroke, notify: false)
         }
+        guard cursor == data.endIndex else { throw DecodeError.trailingData }
         return result
     }
+
+    private static let minimumEncodedStrokeByteCount = 36
+    private static let encodedPointByteCount = 12
+    private static let maximumPointCountPerStroke = 1_000_000
 }
 
 // MARK: - Helpers

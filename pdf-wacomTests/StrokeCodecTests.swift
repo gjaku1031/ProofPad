@@ -54,4 +54,39 @@ final class StrokeCodecTests: XCTestCase {
         let data = StrokeCodec.encode(PageStrokes(pageIndex: 0))
         XCTAssertThrowsError(try StrokeCodec.decode(data.prefix(2)))
     }
+
+    func testTrailingDataRejected() {
+        var data = StrokeCodec.encode(PageStrokes(pageIndex: 0))
+        data.append(0xff)
+        XCTAssertThrowsError(try StrokeCodec.decode(data))
+    }
+
+    func testInvalidWidthRejected() {
+        let page = PageStrokes(pageIndex: 0)
+        page.add(Stroke(color: .systemRed, width: .nan))
+
+        XCTAssertThrowsError(try StrokeCodec.decode(StrokeCodec.encode(page)))
+    }
+
+    func testDecodeDoesNotPostChangeNotifications() throws {
+        let page = PageStrokes(pageIndex: 0)
+        let stroke = Stroke(color: .systemRed, width: 2)
+        stroke.append(StrokePoint(x: 1, y: 2, t: 3))
+        page.add(stroke)
+        let data = StrokeCodec.encode(page)
+
+        var notificationCount = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: PageStrokes.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            notificationCount += 1
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        _ = try StrokeCodec.decode(data)
+
+        XCTAssertEqual(notificationCount, 0)
+    }
 }
