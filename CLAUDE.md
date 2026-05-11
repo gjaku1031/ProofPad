@@ -39,7 +39,8 @@ chore: gitignore 정리
 - **두 페이지 보기 + 표지 단독** 옵션. 한 페이지 모드도 토글로 전환.
 - **.pdfnote 패키지** 포맷 (`manifest.json` + `source.pdf` + `strokes/page-XXXX.bin`).
 - **단일 호스트 윈도우**, 탭당 NSDocument 1개. 시스템 NSWindow tabbing은 사용 안 함.
-- **Phase A (CAShapeLayer) + Phase B (Metal)** 둘 다 활성. baked stroke는 CAShapeLayer, live stroke만 Metal.
+- **PDF + stroke 단일 Metal pass**. `metalLiveLayer.isOpaque = true` — WindowServer 합성기 부담 0 (Notability/Goodnotes 패턴).
+- **CVDisplayLink 60Hz frame pacing**. mouseDragged는 점 누적만, vsync에 한 번 present.
 
 ## 좌표계
 
@@ -60,10 +61,11 @@ NSApplication
             └── SpreadStripView (NSScrollView documentView)
                 └── SpreadView × N
                     └── PageView × 1~2
-                        ├── PDFPageBackgroundView (PDF raster, background queue)
-                        └── StrokeCanvasView      펜 입력 + 렌더
-                            ├── bakedLayer (CAShapeLayer × N)
-                            └── metalLiveLayer (CAMetalLayer)  ← Metal renderer
+                        ├── PDFPageBackgroundView  raster trigger만 (isHidden=true).
+                        │                          결과 CGImage를 StrokeCanvasView로 콜백 전달
+                        └── StrokeCanvasView      펜 입력 + 렌더 (opaque)
+                            └── metalLiveLayer (CAMetalLayer, isOpaque=true)
+                                └── MetalStrokeRenderer: PDF texture + baked + live 단일 pass
 ```
 
 자세한 파일 단위 책임은 각 파일 상단 `// MARK:` 헤더 주석 참고.
