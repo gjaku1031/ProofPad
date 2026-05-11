@@ -200,7 +200,6 @@ final class TabChipView: NSView {
         if !closeButton.frame.contains(local) {
             dragStartLocationInWindow = event.locationInWindow
             isDraggingTab = false
-            onSelect?()
         } else {
             super.mouseDown(with: event)
         }
@@ -227,8 +226,11 @@ final class TabChipView: NSView {
             isDraggingTab = false
             alphaValue = 1
         }
-        guard isDraggingTab else { return }
-        onDrop?(document, event.locationInWindow)
+        if isDraggingTab {
+            onDrop?(document, event.locationInWindow)
+        } else if dragStartLocationInWindow != nil {
+            onSelect?()
+        }
     }
 
     @objc private func closeTapped() {
