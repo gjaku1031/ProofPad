@@ -311,9 +311,9 @@ final class MetalStrokeRenderer {
                 self?.framesInFlight -= 1
             }
         }
+        // presentsWithTransaction=false 표준 패턴 — main 스레드 block 없이 큐잉만.
+        cmd.present(drawable)
         cmd.commit()
-        cmd.waitUntilScheduled()
-        drawable.present()
     }
 
     // MARK: - Geometry helpers

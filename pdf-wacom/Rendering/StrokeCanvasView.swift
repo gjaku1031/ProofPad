@@ -64,8 +64,10 @@ final class StrokeCanvasView: NSView {
         metalLiveLayer.pixelFormat = .bgra8Unorm
         metalLiveLayer.isOpaque = false                     // 투명 합성 → PDF 배경 비침
         metalLiveLayer.framebufferOnly = true
-        // CATransaction과 동기로 present — sibling CALayer 변경과 atomic 합성, mid-frame inconsistency 방지.
-        metalLiveLayer.presentsWithTransaction = true
+        // unified Metal에선 sibling CALayer가 변하지 않으므로 CATransaction 동기 불필요.
+        // false로 두면 cmd.present + commit로 즉시 큐잉만 하고 main 스레드 안 block (이전 true +
+        // waitUntilScheduled 패턴이 GPU 바쁠 때 매 present마다 main을 잠깐씩 stall시켜 이벤트 backup 유발).
+        metalLiveLayer.presentsWithTransaction = false
         metalLiveLayer.maximumDrawableCount = 3
         metalLiveLayer.displaySyncEnabled = true
         metalLiveLayer.allowsNextDrawableTimeout = true
