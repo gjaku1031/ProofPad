@@ -503,6 +503,23 @@ final class TabChipView: NSView {
         }
     }
 
+    override func otherMouseDown(with event: NSEvent) {
+        guard event.buttonNumber == 2 else {
+            super.otherMouseDown(with: event)
+            return
+        }
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard event.buttonNumber == 2 else {
+            super.otherMouseUp(with: event)
+            return
+        }
+        dragStartLocationInWindow = nil
+        isDraggingTab = false
+        onClose?()
+    }
+
     @objc private func closeTapped() {
         onClose?()
     }

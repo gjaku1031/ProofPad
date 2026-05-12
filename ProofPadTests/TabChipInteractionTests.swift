@@ -49,6 +49,22 @@ final class TabChipInteractionTests: XCTestCase {
         XCTAssertEqual(endDragCount, 1)
     }
 
+    func testMiddleClickClosesWithoutSelectingOrDragging() {
+        let chip = makeChip()
+        var closeCount = 0
+        var selectCount = 0
+        var beginDragCount = 0
+        chip.onClose = { closeCount += 1 }
+        chip.onSelect = { selectCount += 1 }
+        chip.onBeginDrag = { _ in beginDragCount += 1 }
+
+        chip.otherMouseUp(with: middleMouseEvent(type: .otherMouseUp, x: 20, y: 12))
+
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(selectCount, 0)
+        XCTAssertEqual(beginDragCount, 0)
+    }
+
     private func makeChip() -> TabChipView {
         let chip = TabChipView(document: PDFInkDocument(), isActive: false)
         chip.frame = NSRect(x: 0, y: 0, width: 180, height: 28)
@@ -65,5 +81,14 @@ final class TabChipInteractionTests: XCTestCase {
                            eventNumber: 0,
                            clickCount: 1,
                            pressure: 0) ?? NSEvent()
+    }
+
+    private func middleMouseEvent(type: CGEventType, x: CGFloat, y: CGFloat) -> NSEvent {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let event = CGEvent(mouseEventSource: source,
+                            mouseType: type,
+                            mouseCursorPosition: CGPoint(x: x, y: y),
+                            mouseButton: .center)
+        return event.flatMap(NSEvent.init(cgEvent:)) ?? NSEvent()
     }
 }
