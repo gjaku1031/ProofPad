@@ -60,6 +60,12 @@ brew upgrade --cask --greedy proofpad
 
 Use `ProofPad > Check for Updates...` or the home screen `Check for Updates...` button. Sparkle reads `appcast.xml` from the latest GitHub Release.
 
+Sparkle requires the old and new app bundles to be signed with the same code signing identity. For personal distribution, ProofPad uses a local self-signed identity instead of Developer ID:
+
+```sh
+scripts/create_local_codesign_identity.sh
+```
+
 `CFBundleVersion` must increase for Sparkle to detect an update:
 
 ```text
@@ -127,7 +133,7 @@ Create the DMG, Sparkle ZIP, appcast, and upload them to GitHub Releases:
 scripts/publish_release.sh v0.1.1
 ```
 
-The Sparkle private key is not stored in this repository. It lives in the macOS Keychain under the `ProofPad` account.
+The Sparkle private key is not stored in this repository. It lives in the macOS Keychain under the `ProofPad` account. The local code signing identity is stored in the login keychain as `ProofPad Local Release`.
 
 ## Layout
 

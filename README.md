@@ -60,6 +60,12 @@ brew upgrade --cask --greedy proofpad
 
 앱에서 `ProofPad > Check for Updates...` 또는 홈 화면의 `Check for Updates...`를 누르면 Sparkle이 GitHub Release의 `appcast.xml`을 확인합니다.
 
+Sparkle 업데이트는 이전 앱과 새 앱이 같은 코드서명 identity로 서명되어 있어야 합니다. 개인용 배포에서는 Developer ID 대신 로컬 self-signed identity를 한 번 만들어 사용합니다.
+
+```sh
+scripts/create_local_codesign_identity.sh
+```
+
 업데이트가 인식되려면 `CFBundleVersion`이 반드시 증가해야 합니다. 예:
 
 ```text
@@ -127,7 +133,7 @@ DMG, Sparkle ZIP, appcast 생성 후 GitHub Release 업로드:
 scripts/publish_release.sh v0.1.1
 ```
 
-Sparkle private key는 저장소에 없습니다. macOS Keychain의 `ProofPad` account에 보관합니다.
+Sparkle private key는 저장소에 없습니다. macOS Keychain의 `ProofPad` account에 보관합니다. 코드서명 identity는 `ProofPad Local Release` 이름으로 login keychain에 보관합니다.
 
 ## 구조
 
