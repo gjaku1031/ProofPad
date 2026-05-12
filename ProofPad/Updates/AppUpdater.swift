@@ -45,6 +45,16 @@ private final class SparkleUpdateDelegate: NSObject, SPUUpdaterDelegate, SPUStan
         logger.info("Sparkle will relaunch ProofPad after installing an update.")
     }
 
+    func updater(_ updater: SPUUpdater,
+                 willInstallUpdateOnQuit item: SUAppcastItem,
+                 immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        logger.info("Sparkle scheduled an update for quit; installing it immediately.")
+        DispatchQueue.main.async {
+            immediateInstallHandler()
+        }
+        return true
+    }
+
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         logger.error("Sparkle update aborted: \(error.localizedDescription, privacy: .public)")
     }
