@@ -6,6 +6,7 @@ final class HomeViewController: NSViewController {
     var onCreateBlankPDF: ((BlankPDFTemplate) -> Void)?
     var onMergePDFs: (() -> Void)?
     var onImagesToPDF: (() -> Void)?
+    var onCheckForUpdates: (() -> Void)?
     var onOpenRecent: ((URL) -> Void)?
 
     private let recentStack = NSStackView()
@@ -214,8 +215,14 @@ final class HomeViewController: NSViewController {
             target: self,
             action: #selector(imagesToPDFTapped)
         )
+        let checkForUpdates = HomeActionButton(
+            title: "Check for Updates...",
+            symbolName: "arrow.down.circle",
+            target: self,
+            action: #selector(checkForUpdatesTapped)
+        )
 
-        for button in [newNote, mergePDF, imagesToPDF] {
+        for button in [newNote, mergePDF, imagesToPDF, checkForUpdates] {
             stack.addArrangedSubview(button)
             button.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
@@ -328,6 +335,10 @@ final class HomeViewController: NSViewController {
 
     @objc private func imagesToPDFTapped() {
         onImagesToPDF?()
+    }
+
+    @objc private func checkForUpdatesTapped() {
+        onCheckForUpdates?()
     }
 }
 

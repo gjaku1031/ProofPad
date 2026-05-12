@@ -45,9 +45,11 @@ mkdir -p "$OUT_DIR"
 ARCHIVE="$OUT_DIR/ProofPad-$VERSION.zip"
 NOTES="$OUT_DIR/ProofPad-$VERSION.md"
 
-rm -f "$ARCHIVE" "$NOTES"
-/usr/bin/ditto -c -k --keepParent "$APP_PATH" "$ARCHIVE"
-printf '# ProofPad %s\n\nSee the GitHub release notes for changes.\n' "$VERSION" > "$NOTES"
+rm -f "$ARCHIVE"
+/usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ARCHIVE"
+if [[ ! -f "$NOTES" ]]; then
+  printf '# ProofPad %s\n\nSee the GitHub release notes for changes.\n' "$VERSION" > "$NOTES"
+fi
 
 "$GENERATE_APPCAST" \
   --account ProofPad \

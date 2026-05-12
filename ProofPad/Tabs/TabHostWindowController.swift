@@ -108,6 +108,9 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         vc.onImagesToPDF = { [weak self] in
             self?.imagesToPDFFromHome()
         }
+        vc.onCheckForUpdates = {
+            AppUpdater.shared.checkForUpdates(nil)
+        }
         vc.onOpenRecent = { [weak self] url in
             self?.openRecentDocument(url)
         }

@@ -3,9 +3,11 @@ import Sparkle
 
 @MainActor
 final class AppUpdater: NSObject {
+    static let shared = AppUpdater()
+
     let updaterController: SPUStandardUpdaterController
 
-    override init() {
+    private override init() {
         updaterController = SPUStandardUpdaterController(
             startingUpdater: false,
             updaterDelegate: nil,
@@ -16,5 +18,9 @@ final class AppUpdater: NSObject {
 
     func start() {
         updaterController.startUpdater()
+    }
+
+    func checkForUpdates(_ sender: Any?) {
+        updaterController.checkForUpdates(sender)
     }
 }

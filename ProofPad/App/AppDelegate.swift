@@ -3,7 +3,7 @@ import Cocoa
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
-    private let appUpdater = AppUpdater()
+    private let appUpdater = AppUpdater.shared
     private var arrowKeyMonitor: Any?
     private var holdKeyMonitor: Any?
     private var proximityMonitor: Any?
