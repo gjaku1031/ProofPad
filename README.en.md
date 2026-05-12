@@ -69,15 +69,15 @@ scripts/create_local_codesign_identity.sh
 `CFBundleVersion` must increase for Sparkle to detect an update:
 
 ```text
-0.1.0 (build 1) -> 0.1.1 (build 2)
+0.1.6 (build 7) -> 0.1.7 (build 8)
 ```
 
 Each GitHub Release includes:
 
 ```text
-ProofPad-0.1.1.dmg
-ProofPad-0.1.1.zip
-ProofPad-0.1.1.md
+ProofPad-<version>.dmg
+ProofPad-<version>.zip
+ProofPad-<version>.md
 appcast.xml
 ```
 
@@ -118,7 +118,7 @@ xcodebuild -project ProofPad.xcodeproj -scheme ProofPad -configuration Debug tes
 Bump the app version:
 
 ```sh
-scripts/bump_version.sh 0.1.1 2
+scripts/bump_version.sh <short-version> <build-number>
 ```
 
 Build the release app:
@@ -130,7 +130,7 @@ scripts/build_release.sh
 Create the DMG, Sparkle ZIP, appcast, and upload them to GitHub Releases:
 
 ```sh
-scripts/publish_release.sh v0.1.1
+scripts/publish_release.sh v<short-version>
 ```
 
 The Sparkle private key is not stored in this repository. It lives in the macOS Keychain under the `ProofPad` account. The local code signing identity is stored in the login keychain as `ProofPad Local Release`.

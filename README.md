@@ -69,15 +69,15 @@ scripts/create_local_codesign_identity.sh
 업데이트가 인식되려면 `CFBundleVersion`이 반드시 증가해야 합니다. 예:
 
 ```text
-0.1.0 (build 1) -> 0.1.1 (build 2)
+0.1.6 (build 7) -> 0.1.7 (build 8)
 ```
 
 GitHub Release asset은 다음 파일을 포함합니다.
 
 ```text
-ProofPad-0.1.1.dmg
-ProofPad-0.1.1.zip
-ProofPad-0.1.1.md
+ProofPad-<version>.dmg
+ProofPad-<version>.zip
+ProofPad-<version>.md
 appcast.xml
 ```
 
@@ -118,7 +118,7 @@ xcodebuild -project ProofPad.xcodeproj -scheme ProofPad -configuration Debug tes
 버전 올리기:
 
 ```sh
-scripts/bump_version.sh 0.1.1 2
+scripts/bump_version.sh <short-version> <build-number>
 ```
 
 Release 앱 빌드:
@@ -130,7 +130,7 @@ scripts/build_release.sh
 DMG, Sparkle ZIP, appcast 생성 후 GitHub Release 업로드:
 
 ```sh
-scripts/publish_release.sh v0.1.1
+scripts/publish_release.sh v<short-version>
 ```
 
 Sparkle private key는 저장소에 없습니다. macOS Keychain의 `ProofPad` account에 보관합니다. 코드서명 identity는 `ProofPad Local Release` 이름으로 login keychain에 보관합니다.
