@@ -1,7 +1,9 @@
 import Cocoa
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
+    private let appUpdater = AppUpdater()
     private var arrowKeyMonitor: Any?
     private var holdKeyMonitor: Any?
     private var proximityMonitor: Any?
@@ -9,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var inputSettingsObserver: NSObjectProtocol?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenuBuilder.build()
+        NSApp.mainMenu = MainMenuBuilder.build(updateController: appUpdater.updaterController)
         NSApp.setActivationPolicy(.regular)
         // 시스템 NSWindow tabbing(Show Tab Bar/Show All Tabs)을 막아 우리 자체 탭바와 충돌 회피.
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -22,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installApplicationIcon()
         NSApp.activate(ignoringOtherApps: true)
+        appUpdater.start()
         installHoldKeyMonitor()
         installArrowKeyNavigation()
         installTabletProximityMonitor()

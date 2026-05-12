@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>pdf-wacom</string>
+	<string>ProofPad</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -45,5 +45,9 @@
 	<string>NSApplication</string>
 	<key>NSRecentDocumentsLimit</key>
 	<integer>20</integer>
+	<key>SUFeedURL</key>
+	<string>https://github.com/gjaku1031/ProofPad/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>XzfmQIbJIzogbylFZxrTVmAGqgdBjj0K5XfX1+2dksU=</string>
 </dict>
 </plist>

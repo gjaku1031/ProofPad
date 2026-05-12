@@ -1,4 +1,4 @@
-name: pdf-wacom
+name: ProofPad
 options:
   bundleIdPrefix: com.ken
   deploymentTarget:
@@ -15,19 +15,24 @@ settings:
     CLANG_WARN_DOCUMENTATION_COMMENTS: NO
     ENABLE_DEBUG_DYLIB: "NO"
 
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.9.1
+
 targets:
-  pdf-wacom:
+  ProofPad:
     type: application
     platform: macOS
     sources:
-      - path: pdf-wacom
+      - path: ProofPad
         excludes:
           - "Info.plist"
     info:
-      path: pdf-wacom/Info.plist
+      path: ProofPad/Info.plist
       properties:
         CFBundleName: $(PRODUCT_NAME)
-        CFBundleDisplayName: pdf-wacom
+        CFBundleDisplayName: ProofPad
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
@@ -36,6 +41,8 @@ targets:
         NSPrincipalClass: NSApplication
         NSHighResolutionCapable: true
         NSRecentDocumentsLimit: 20
+        SUFeedURL: https://github.com/gjaku1031/ProofPad/releases/latest/download/appcast.xml
+        SUPublicEDKey: XzfmQIbJIzogbylFZxrTVmAGqgdBjj0K5XfX1+2dksU=
         CFBundleDocumentTypes:
           - CFBundleTypeName: PDF Document
             CFBundleTypeRole: Editor
@@ -44,40 +51,43 @@ targets:
             NSDocumentClass: PDFInkDocument
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ken.pdf-wacom
-        PRODUCT_NAME: pdf-wacom
+        PRODUCT_BUNDLE_IDENTIFIER: com.ken.proofpad
+        PRODUCT_NAME: ProofPad
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
         ENABLE_HARDENED_RUNTIME: YES
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
 
-  pdf-wacomTests:
+  ProofPadTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: pdf-wacomTests
+      - path: ProofPadTests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ken.pdf-wacom.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.ken.proofpad.tests
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: pdf-wacom
+      - target: ProofPad
 
 schemes:
-  pdf-wacom:
+  ProofPad:
     build:
       targets:
-        pdf-wacom: all
+        ProofPad: all
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - pdf-wacomTests
+        - ProofPadTests
     archive:
       config: Release

@@ -124,7 +124,7 @@ final class HomeViewController: NSViewController {
         titleStack.spacing = 2
         stack.addArrangedSubview(titleStack)
 
-        let title = NSTextField(labelWithString: "pdf-wacom")
+        let title = NSTextField(labelWithString: "ProofPad")
         title.font = .systemFont(ofSize: 30, weight: .semibold)
         title.textColor = .labelColor
         titleStack.addArrangedSubview(title)

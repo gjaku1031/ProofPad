@@ -48,7 +48,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
-        window.title = "pdf-wacom"
+        window.title = "ProofPad"
         // 탭 chip에 이미 문서명이 있어 title 텍스트는 중복. 깔끔하게 숨김.
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -153,7 +153,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         self.document = nil
         hostContentVC.setActive(homeViewController)
         homeViewController.reloadRecentFiles()
-        window?.title = "pdf-wacom"
+        window?.title = "ProofPad"
         showWindowIfNeeded()
         tabBarView.reload()
     }
@@ -221,7 +221,7 @@ final class TabHostWindowController: NSWindowController, NSMenuItemValidation {
         self.document = document
         let vc = viewController(for: document)
         hostContentVC.setActive(vc)
-        window?.title = document.displayName ?? "pdf-wacom"
+        window?.title = document.displayName ?? "ProofPad"
         tabBarView.reload()
     }
 

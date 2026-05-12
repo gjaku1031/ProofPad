@@ -1,6 +1,6 @@
 import Cocoa
 import XCTest
-@testable import pdf_wacom
+@testable import ProofPad
 
 final class InputSettingsTests: XCTestCase {
     private var originalSettings: InputSettings.Snapshot!

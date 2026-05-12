@@ -1,4 +1,4 @@
-# pdf-wacom
+# ProofPad
 
 수학 강사의 시험지 PDF 채점이 주 시나리오인 macOS 노트앱. 와콤 펜으로 PDF 위에 그리고, 탭으로 여러 PDF를 동시에 다룬다.
 
@@ -8,7 +8,7 @@ xcodegen으로 프로젝트 생성 후 빌드:
 
 ```sh
 xcodegen
-xcodebuild -project pdf-wacom.xcodeproj -scheme pdf-wacom -configuration Debug build
+xcodebuild -project ProofPad.xcodeproj -scheme ProofPad -configuration Debug build
 ```
 
 `.metal` 파일이 있으므로 Metal Toolchain이 필요. 미설치 환경에선:

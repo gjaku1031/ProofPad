@@ -1,6 +1,6 @@
 import Foundation
 
-// 열린 탭들의 URL 목록을 ~/Library/Application Support/pdf-wacom/session.json에 저장.
+// 열린 탭들의 URL 목록을 ~/Library/Application Support/ProofPad/session.json에 저장.
 // 다음 실행 시 AppDelegate가 읽어서 자동 복원.
 enum TabSession {
 
@@ -10,7 +10,7 @@ enum TabSession {
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let dir = appSupport.appendingPathComponent("pdf-wacom", isDirectory: true)
+        let dir = appSupport.appendingPathComponent("ProofPad", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent(fileName)
     }

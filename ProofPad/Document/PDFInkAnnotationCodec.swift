@@ -30,7 +30,7 @@ enum PDFInkAnnotationCodec {
 
     private static let ownerKey = PDFAnnotationKey(rawValue: "PWOwner")
     private static let strokeDataKey = PDFAnnotationKey(rawValue: "PWStrokeData")
-    private static let ownerValue = "pdf-wacom"
+    private static let ownerValue = "ProofPad"
 
     static func annotation(from stroke: Stroke, pageBounds: CGRect) -> PDFAnnotation? {
         guard !stroke.points.isEmpty else { return nil }

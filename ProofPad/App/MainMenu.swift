@@ -1,9 +1,9 @@
 import Cocoa
 
 enum MainMenuBuilder {
-    static func build() -> NSMenu {
+    static func build(updateController: AnyObject) -> NSMenu {
         let mainMenu = NSMenu()
-        mainMenu.addItem(makeAppMenu())
+        mainMenu.addItem(makeAppMenu(updateController: updateController))
         mainMenu.addItem(makeFileMenu())
         mainMenu.addItem(makeEditMenu())
         mainMenu.addItem(makeViewMenu())
@@ -11,14 +11,19 @@ enum MainMenuBuilder {
         return mainMenu
     }
 
-    private static func makeAppMenu() -> NSMenuItem {
+    private static func makeAppMenu(updateController: AnyObject) -> NSMenuItem {
         let item = NSMenuItem()
         let menu = NSMenu()
-        menu.addItem(withTitle: "About pdf-wacom",
+        menu.addItem(withTitle: "About ProofPad",
                      action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                      keyEquivalent: "")
+        let checkForUpdates = NSMenuItem(title: "Check for Updates…",
+                                         action: Selector(("checkForUpdates:")),
+                                         keyEquivalent: "")
+        checkForUpdates.target = updateController
+        menu.addItem(checkForUpdates)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Hide pdf-wacom",
+        menu.addItem(withTitle: "Hide ProofPad",
                      action: #selector(NSApplication.hide(_:)),
                      keyEquivalent: "h")
         let hideOthers = NSMenuItem(title: "Hide Others",
@@ -30,7 +35,7 @@ enum MainMenuBuilder {
                      action: #selector(NSApplication.unhideAllApplications(_:)),
                      keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit pdf-wacom",
+        menu.addItem(withTitle: "Quit ProofPad",
                      action: #selector(NSApplication.terminate(_:)),
                      keyEquivalent: "q")
         item.submenu = menu

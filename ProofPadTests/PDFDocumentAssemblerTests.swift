@@ -1,6 +1,6 @@
 import PDFKit
 import XCTest
-@testable import pdf_wacom
+@testable import ProofPad
 
 final class PDFDocumentAssemblerTests: XCTestCase {
 

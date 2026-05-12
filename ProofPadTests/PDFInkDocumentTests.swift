@@ -1,7 +1,7 @@
 import Cocoa
 import PDFKit
 import XCTest
-@testable import pdf_wacom
+@testable import ProofPad
 
 final class PDFInkDocumentTests: XCTestCase {
 

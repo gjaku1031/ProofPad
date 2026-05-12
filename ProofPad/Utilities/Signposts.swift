@@ -10,7 +10,7 @@ import os.signpost
 //
 // Production 빌드에서도 cost는 거의 0 — kernel이 record 활성 안 되어 있으면 즉시 return.
 enum Signposts {
-    private static let log = OSLog(subsystem: "com.ken.pdfwacom",
+    private static let log = OSLog(subsystem: "com.ken.proofpad",
                                    category: .pointsOfInterest)
     static let signposter = OSSignposter(logHandle: log)
 }

@@ -1,5 +1,5 @@
 import XCTest
-@testable import pdf_wacom
+@testable import ProofPad
 
 final class RecentPDFStoreTests: XCTestCase {
     private var suiteName: String!
