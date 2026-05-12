@@ -34,8 +34,8 @@ targets:
         CFBundleName: $(PRODUCT_NAME)
         CFBundleDisplayName: ProofPad
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
-        CFBundleShortVersionString: "0.1.6"
-        CFBundleVersion: "7"
+        CFBundleShortVersionString: "0.1.7"
+        CFBundleVersion: "8"
         CFBundlePackageType: APPL
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSPrincipalClass: NSApplication
