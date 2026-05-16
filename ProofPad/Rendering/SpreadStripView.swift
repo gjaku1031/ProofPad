@@ -38,6 +38,13 @@ final class SpreadStripView: NSView {
         let viewportOffset: NSPoint
     }
 
+    private struct PageViewportAnchor {
+        let pageIndex: Int
+        let relativeX: CGFloat
+        let relativeY: CGFloat
+        let viewportOffset: NSPoint
+    }
+
     var spreadGap: CGFloat = 36 { didSet { needsLayout = true } }
     var pageGap: CGFloat = 12 { didSet { needsLayout = true } }
     var horizontalMargin: CGFloat = 32 { didSet { needsLayout = true } }
@@ -56,6 +63,12 @@ final class SpreadStripView: NSView {
         switch zoomMode {
         case .fitHeight, .fitPage: return 12
         default: return bottomMargin
+        }
+    }
+    private var effectiveHorizontalMargin: CGFloat {
+        switch zoomMode {
+        case .fitWidth: return 0
+        default: return horizontalMargin
         }
     }
 
@@ -134,7 +147,12 @@ final class SpreadStripView: NSView {
     func setSpreads(_ list: [Spread],
                     document: PDFInkDocument,
                     toolController: ToolController,
-                    onChange: @escaping () -> Void) {
+                    onChange: @escaping () -> Void,
+                    pagesPerSpread newPagesPerSpread: Int? = nil) {
+        let anchor = makePageViewportAnchor()
+        if let newPagesPerSpread {
+            pagesPerSpread = newPagesPerSpread
+        }
         spreadViews.forEach { $0.view.removeFromSuperview() }
         spreadViews = list.map { spread in
             let v = SpreadView(spread: spread,
@@ -146,6 +164,8 @@ final class SpreadStripView: NSView {
             return (spread, v)
         }
         needsLayout = true
+        layoutSubtreeIfNeeded()
+        restorePageViewportAnchor(anchor)
         updateRenderingForVisibleRect()
     }
 
@@ -247,6 +267,7 @@ final class SpreadStripView: NSView {
     override func layout() {
         super.layout()
         guard let referenceSpread = spreadViews.first?.spread else { return }
+        let pageAnchor = makePageViewportAnchor()
         let referencePage = referenceSpread.leftPage ?? referenceSpread.rightPage
         let pagePtSize = referencePage?.bounds(for: .mediaBox).size
             ?? NSSize(width: 612, height: 792)
@@ -256,18 +277,19 @@ final class SpreadStripView: NSView {
 
         // perPageWidth = 한 페이지 view 너비 (포인트). 단일/펼침에서 동일한 의미.
         let isSingle = pagesPerSpread <= 1
+        let hMargin = effectiveHorizontalMargin
         let topM = effectiveTopMargin
         let botM = effectiveBottomMargin
         let perPageWidth: CGFloat
         switch zoomMode {
         case .fitWidth:
-            let availWidth = max(0, clipSize.width - horizontalMargin * 2)
+            let availWidth = max(0, clipSize.width - hMargin * 2)
             perPageWidth = isSingle ? availWidth : max(0, (availWidth - pageGap) / 2)
         case .fitHeight:
             let availHeight = max(0, clipSize.height - topM - botM)
             perPageWidth = availHeight / max(pageAspect, 0.001)
         case .fitPage:
-            let availWidth = max(0, clipSize.width - horizontalMargin * 2)
+            let availWidth = max(0, clipSize.width - hMargin * 2)
             let fwPer = isSingle ? availWidth : max(0, (availWidth - pageGap) / 2)
             let availHeight = max(0, clipSize.height - topM - botM)
             let fhPer = availHeight / max(pageAspect, 0.001)
@@ -278,7 +300,7 @@ final class SpreadStripView: NSView {
 
         let pageHeight = perPageWidth * pageAspect
         let spreadWidth = isSingle ? perPageWidth : (perPageWidth * 2 + pageGap)
-        let totalContentWidth = spreadWidth + horizontalMargin * 2
+        let totalContentWidth = spreadWidth + hMargin * 2
 
         // documentView의 width는 max(clip, content)로 두어 가운데 정렬 가능.
         let docWidth = max(clipSize.width, totalContentWidth)
@@ -295,6 +317,7 @@ final class SpreadStripView: NSView {
         if abs(frame.width - docWidth) > 0.5 || abs(frame.height - totalHeight) > 0.5 {
             setFrameSize(NSSize(width: docWidth, height: totalHeight))
         }
+        restorePageViewportAnchor(pageAnchor)
         updateRenderingForVisibleRect()
     }
 
@@ -435,6 +458,86 @@ final class SpreadStripView: NSView {
         )
         clipView.setBoundsOrigin(clampedScrollOrigin(proposedOrigin, clipSize: clipView.bounds.size))
         scroll.reflectScrolledClipView(clipView)
+    }
+
+    private func makePageViewportAnchor() -> PageViewportAnchor? {
+        guard let scroll = enclosingScrollView, !spreadViews.isEmpty else { return nil }
+        let clipBounds = scroll.contentView.bounds
+        let documentPoint = NSPoint(x: clipBounds.midX, y: clipBounds.midY)
+        guard let anchoredPage = pageFrame(anchoring: documentPoint) else { return nil }
+        let relativeX = ((documentPoint.x - anchoredPage.frame.minX) / max(anchoredPage.frame.width, 1))
+            .clampedTo(min: 0, max: 1)
+        let relativeY = ((documentPoint.y - anchoredPage.frame.minY) / max(anchoredPage.frame.height, 1))
+            .clampedTo(min: 0, max: 1)
+        return PageViewportAnchor(
+            pageIndex: anchoredPage.pageIndex,
+            relativeX: relativeX,
+            relativeY: relativeY,
+            viewportOffset: NSPoint(x: documentPoint.x - clipBounds.minX,
+                                    y: documentPoint.y - clipBounds.minY)
+        )
+    }
+
+    private func restorePageViewportAnchor(_ anchor: PageViewportAnchor?) {
+        guard let anchor,
+              let scroll = enclosingScrollView,
+              let frame = pageFrameInDocument(forPageIndex: anchor.pageIndex) else { return }
+        let clipView = scroll.contentView
+        let anchoredDocumentPoint = NSPoint(
+            x: frame.minX + frame.width * anchor.relativeX,
+            y: frame.minY + frame.height * anchor.relativeY
+        )
+        let proposedOrigin = NSPoint(
+            x: anchoredDocumentPoint.x - anchor.viewportOffset.x,
+            y: anchoredDocumentPoint.y - anchor.viewportOffset.y
+        )
+        clipView.setBoundsOrigin(clampedScrollOrigin(proposedOrigin, clipSize: clipView.bounds.size))
+        scroll.reflectScrolledClipView(clipView)
+    }
+
+    private func pageFrame(anchoring documentPoint: NSPoint) -> (pageIndex: Int, frame: NSRect)? {
+        var best: (pageIndex: Int, frame: NSRect, distance: CGFloat)?
+        for entry in spreadViews {
+            for pageView in [entry.view.leftPageView, entry.view.rightPageView].compactMap({ $0 }) {
+                let frame = pageView.frame.offsetBy(dx: entry.view.frame.minX,
+                                                    dy: entry.view.frame.minY)
+                if frame.contains(documentPoint) {
+                    return (pageView.pageIndex, frame)
+                }
+                let dx: CGFloat
+                if documentPoint.x < frame.minX {
+                    dx = frame.minX - documentPoint.x
+                } else if documentPoint.x > frame.maxX {
+                    dx = documentPoint.x - frame.maxX
+                } else {
+                    dx = 0
+                }
+                let dy: CGFloat
+                if documentPoint.y < frame.minY {
+                    dy = frame.minY - documentPoint.y
+                } else if documentPoint.y > frame.maxY {
+                    dy = documentPoint.y - frame.maxY
+                } else {
+                    dy = 0
+                }
+                let distance = dx * dx + dy * dy
+                if best == nil || distance < best!.distance {
+                    best = (pageView.pageIndex, frame, distance)
+                }
+            }
+        }
+        guard let best else { return nil }
+        return (best.pageIndex, best.frame)
+    }
+
+    private func pageFrameInDocument(forPageIndex pageIndex: Int) -> NSRect? {
+        for entry in spreadViews {
+            if let pageFrame = entry.view.pageFrame(forPageIndex: pageIndex) {
+                return pageFrame.offsetBy(dx: entry.view.frame.minX,
+                                          dy: entry.view.frame.minY)
+            }
+        }
+        return nil
     }
 
     private func clampedScrollOrigin(_ origin: NSPoint, clipSize: NSSize) -> NSPoint {

@@ -292,18 +292,25 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         lastModifierFlags = event.modifierFlags
         window?.makeFirstResponder(self)
         if beginMovePan(with: event) { return }
-        guard TabletEventRouter.decide(event) == .pen else { return }
+        let inputDecision = TabletEventRouter.decide(event)
+        guard inputDecision.acceptsDrawing else { return }
         Signposts.signposter.emitEvent("mouseDown")
         let p = pagePoint(for: event)
         let tool = toolController.tool(forModifierFlags: event.modifierFlags)
         activeTool = tool
         let isEraser = tool is EraserTool
-        // 펜 모드일 때만 시스템 커서 hide — 사용자가 ink를 펜 위치 indicator로 사용 + Metal synthetic ring.
-        // 지우개 모드 (⌃ hold)는 시스템 NSCursor가 eraser 모양이라 그대로 보여줘야 함.
+        // 실제 tablet pen일 때만 시스템 커서를 숨기고 Metal cursor를 쓴다. 마우스 drawing 허용 모드에서는
+        // 일반 arrow cursor를 유지해야 포인터가 펜 indicator로 바뀌며 산만해지지 않는다.
         if !isEraser {
-            NSCursor.hide()
-            didHidePenCursor = true
-            metalRenderer?.renderSyntheticCursor = true
+            let usesTabletCursor = inputDecision.usesTabletCursor
+            metalRenderer?.renderSyntheticCursor = usesTabletCursor
+            if usesTabletCursor {
+                NSCursor.hide()
+                didHidePenCursor = true
+            } else {
+                didHidePenCursor = false
+                NSCursor.arrow.set()
+            }
         } else {
             metalRenderer?.renderSyntheticCursor = false
         }
@@ -456,6 +463,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         inProgressStroke = stroke
         let scale = window?.backingScaleFactor ?? 2.0
         metalRenderer?.beginLiveStroke(color: stroke.color, scale: scale)
+        metalRenderer?.setLivePredictionEnabled(true)
         for sample in renderSamples(for: stroke) {
             metalRenderer?.appendLiveSample(sample)
         }
@@ -481,6 +489,31 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
         inProgressStroke = stroke
         redrawLiveStrokeFromModel()
         presentNow()
+    }
+
+    func setLivePredictionEnabled(_ enabled: Bool) {
+        metalRenderer?.setLivePredictionEnabled(enabled)
+    }
+
+    func updateEraserIndicator(at pagePoint: CGPoint, radius pageRadius: CGFloat, immediate: Bool = false) {
+        let center = viewPoint(forPagePoint: pagePoint)
+        let radius = max(pageRadius * pageToViewScale, 2)
+        metalRenderer?.setEraserIndicator(center: SIMD2<Float>(Float(center.x), Float(center.y)),
+                                          radius: Float(radius))
+        if immediate {
+            presentNow()
+        } else {
+            setNeedsPresent()
+        }
+    }
+
+    func clearEraserIndicator(immediate: Bool = true) {
+        metalRenderer?.clearEraserIndicator()
+        if immediate {
+            presentNow()
+        } else {
+            setNeedsPresent()
+        }
     }
 
     func commitStroke(_ stroke: Stroke) {

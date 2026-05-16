@@ -12,6 +12,19 @@ enum TabletEventRouter {
     enum Decision {
         case ignore
         case pen
+        case mouse
+
+        var acceptsDrawing: Bool {
+            switch self {
+            case .ignore: return false
+            case .pen, .mouse: return true
+            }
+        }
+
+        var usesTabletCursor: Bool {
+            if case .pen = self { return true }
+            return false
+        }
     }
 
     /// tabletProximity 이벤트로 갱신되는 펜 근접 상태.
@@ -35,6 +48,6 @@ enum TabletEventRouter {
         // 2) 펜이 근접 안에 있으면 subtype이 잠깐 다르게 와도 펜으로 인정 (proximity 경계 transition).
         if penInProximity { return .pen }
         // 3) 테스트/범용 입력용으로 마우스 drawing을 허용할 수 있다. 기본값은 기존처럼 ignore.
-        return InputSettings.shared.ignoresMouseInput ? .ignore : .pen
+        return InputSettings.shared.ignoresMouseInput ? .ignore : .mouse
     }
 }

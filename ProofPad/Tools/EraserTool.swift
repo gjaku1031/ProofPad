@@ -20,6 +20,7 @@ final class EraserTool: Tool {
         erasedThisDrag.removeAll()
         lastPoint = pagePoint
         canvas.beginEraseUndoGroup()
+        canvas.updateEraserIndicator(at: pagePoint, radius: radius, immediate: true)
         eraseAt(pagePoint, canvas: canvas)
     }
 
@@ -40,11 +41,14 @@ final class EraserTool: Tool {
             eraseAt(pagePoint, canvas: canvas)
         }
         lastPoint = pagePoint
+        canvas.updateEraserIndicator(at: pagePoint, radius: radius)
     }
 
     func mouseUp(at pagePoint: CGPoint, event: NSEvent, canvas: StrokeCanvasView) {
+        canvas.updateEraserIndicator(at: pagePoint, radius: radius, immediate: true)
         eraseAt(pagePoint, canvas: canvas)
         canvas.endEraseUndoGroup()
+        canvas.clearEraserIndicator(immediate: true)
         erasedThisDrag.removeAll()
         lastPoint = nil
     }

@@ -37,6 +37,106 @@ final class ZoomBehaviorTests: XCTestCase {
         XCTAssertEqual(centeredSpreadIndex(in: stripView, scrollView: scrollView), 79)
     }
 
+    func testFitWidthUsesFullViewportWidthInSinglePageMode() throws {
+        let document = PDFInkDocument()
+        try document.read(from: makePDFData(pageCount: 2), ofType: "com.adobe.pdf")
+        let pdf = try XCTUnwrap(document.pdfDocument)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+        let stripView = SpreadStripView(frame: NSRect(x: 0, y: 0, width: 900, height: 100))
+        scrollView.documentView = stripView
+
+        stripView.setSpreads(
+            Spread.pair(pdf, coverIsSinglePage: false, pagesPerSpread: 1),
+            document: document,
+            toolController: ToolController(),
+            onChange: {},
+            pagesPerSpread: 1
+        )
+        scrollView.layoutSubtreeIfNeeded()
+        stripView.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(stripView.spreadViews.first?.view.frame.minX ?? -1, 0, accuracy: 0.5)
+        XCTAssertEqual(stripView.spreadViews.first?.view.frame.width ?? 0, 900, accuracy: 0.5)
+    }
+
+    func testSetSpreadsPreservesVisiblePageAcrossPageLayoutChange() throws {
+        let document = PDFInkDocument()
+        try document.read(from: makePDFData(pageCount: 12), ofType: "com.adobe.pdf")
+        let pdf = try XCTUnwrap(document.pdfDocument)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+        scrollView.hasVerticalScroller = true
+        let stripView = SpreadStripView(frame: NSRect(x: 0, y: 0, width: 900, height: 100))
+        scrollView.documentView = stripView
+
+        stripView.setSpreads(
+            Spread.pair(pdf, coverIsSinglePage: false, pagesPerSpread: 2),
+            document: document,
+            toolController: ToolController(),
+            onChange: {},
+            pagesPerSpread: 2
+        )
+        scrollView.layoutSubtreeIfNeeded()
+        stripView.layoutSubtreeIfNeeded()
+
+        scrollView.contentView.setBoundsOrigin(NSPoint(
+            x: 0,
+            y: stripView.spreadViews[3].view.frame.minY
+        ))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        let pageBeforeLayoutChange = stripView.currentPrimaryPageIndex()
+        XCTAssertNotNil(pageBeforeLayoutChange)
+
+        stripView.setSpreads(
+            Spread.pair(pdf, coverIsSinglePage: false, pagesPerSpread: 1),
+            document: document,
+            toolController: ToolController(),
+            onChange: {},
+            pagesPerSpread: 1
+        )
+        scrollView.layoutSubtreeIfNeeded()
+        stripView.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(stripView.currentPrimaryPageIndex(), pageBeforeLayoutChange)
+    }
+
+    func testFitWidthResizePreservesVisiblePage() throws {
+        let document = PDFInkDocument()
+        try document.read(from: makePDFData(pageCount: 40), ofType: "com.adobe.pdf")
+        let pdf = try XCTUnwrap(document.pdfDocument)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 1000, height: 700))
+        scrollView.hasVerticalScroller = true
+        let stripView = SpreadStripView(frame: NSRect(x: 0, y: 0, width: 1000, height: 100))
+        scrollView.documentView = stripView
+
+        stripView.setSpreads(
+            Spread.pair(pdf, coverIsSinglePage: false, pagesPerSpread: 1),
+            document: document,
+            toolController: ToolController(),
+            onChange: {},
+            pagesPerSpread: 1
+        )
+        scrollView.layoutSubtreeIfNeeded()
+        stripView.layoutSubtreeIfNeeded()
+        scrollView.contentView.setBoundsOrigin(NSPoint(
+            x: 0,
+            y: stripView.spreadViews[24].view.frame.minY
+        ))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        let pageBeforeResize = stripView.currentPrimaryPageIndex()
+        XCTAssertNotNil(pageBeforeResize)
+
+        scrollView.frame = NSRect(x: 0, y: 0, width: 760, height: 700)
+        scrollView.layoutSubtreeIfNeeded()
+        stripView.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(stripView.currentPrimaryPageIndex(), pageBeforeResize)
+    }
+
     private func centeredSpreadIndex(in stripView: SpreadStripView,
                                      scrollView: NSScrollView) -> Int? {
         let centerY = scrollView.contentView.bounds.midY

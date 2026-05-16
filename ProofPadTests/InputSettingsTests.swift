@@ -45,8 +45,16 @@ final class InputSettingsTests: XCTestCase {
         }
 
         InputSettings.shared.setIgnoresMouseInput(false)
-        guard case .pen = TabletEventRouter.decide(event) else {
+        guard case .mouse = TabletEventRouter.decide(event) else {
             return XCTFail("Mouse should be accepted when ignore is disabled")
+        }
+    }
+
+    func testTabletProximityUsesPenRouting() {
+        TabletEventRouter.setPenInProximityForTesting(true)
+
+        guard case .pen = TabletEventRouter.decide(mouseEvent()) else {
+            return XCTFail("Tablet proximity should route as pen even if the event subtype is transiently mouse")
         }
     }
 

@@ -121,6 +121,7 @@ final class MetalStrokeRenderer {
     // 구현: liveBuffer에 안 쓰고 매 draw마다 setVertexBytes로 transient upload — GPU race 회피.
     private var predictedTailVerts: [SIMD2<Float>] = []
     private var livePredictionStrength: Float = 1.0
+    private var livePredictionEnabled = true
 
     // MARK: - Synthetic cursor
     //
@@ -135,6 +136,13 @@ final class MetalStrokeRenderer {
     private var cursorVerts: [SIMD2<Float>] = []
     /// 펜 모드에서만 true. 지우개 모드면 시스템 NSCursor가 eraser 모양으로 보이므로 중복 indicator 회피.
     var renderSyntheticCursor: Bool = true
+
+    // MARK: - Eraser indicator
+
+    private static let eraserIndicatorSegments = 48
+    private var eraserIndicatorCenter: SIMD2<Float>?
+    private var eraserIndicatorRadius: Float = 0
+    private var eraserIndicatorVerts: [SIMD2<Float>] = []
 
     static var isAvailable: Bool { MTLCreateSystemDefaultDevice() != nil }
 
@@ -161,6 +169,7 @@ final class MetalStrokeRenderer {
         liveCount = 0
         liveActive = true
         livePredictionStrength = Float(InkFeelSettings.shared.current.sanitized.latencyLead)
+        livePredictionEnabled = true
         let c = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
         liveColor = SIMD4<Float>(Float(c.redComponent),
                                  Float(c.greenComponent),
@@ -202,6 +211,10 @@ final class MetalStrokeRenderer {
         liveLastSample = nil
         liveCount = 0
         liveActive = false
+    }
+
+    func setLivePredictionEnabled(_ enabled: Bool) {
+        livePredictionEnabled = enabled
     }
 
     // MARK: - Baked rebuild API (호출자 = StrokeCanvasView)
@@ -278,6 +291,23 @@ final class MetalStrokeRenderer {
     func clearBaked() {
         bakedRanges.removeAll(keepingCapacity: true)
         bakedVertexCount = 0
+    }
+
+    // MARK: - Eraser indicator API
+
+    func setEraserIndicator(center: SIMD2<Float>, radius: Float) {
+        guard center.x.isFinite, center.y.isFinite, radius.isFinite, radius > 0 else {
+            clearEraserIndicator()
+            return
+        }
+        eraserIndicatorCenter = center
+        eraserIndicatorRadius = max(radius, 2)
+    }
+
+    func clearEraserIndicator() {
+        eraserIndicatorCenter = nil
+        eraserIndicatorRadius = 0
+        eraserIndicatorVerts.removeAll(keepingCapacity: true)
     }
 
     // MARK: - PDF background API
@@ -422,6 +452,27 @@ final class MetalStrokeRenderer {
                 }
             }
 
+            let eraserIndicatorCount = buildEraserIndicatorRing()
+            if eraserIndicatorCount > 0 {
+                var eraserColor = SIMD4<Float>(0.05, 0.45, 1.0, 0.38)
+                encoder.setFragmentBytes(
+                    &eraserColor,
+                    length: MemoryLayout<SIMD4<Float>>.size,
+                    index: 0
+                )
+                eraserIndicatorVerts.withUnsafeBufferPointer { ptr in
+                    guard let base = ptr.baseAddress else { return }
+                    encoder.setVertexBytes(
+                        base,
+                        length: eraserIndicatorCount * MemoryLayout<SIMD2<Float>>.stride,
+                        index: 0
+                    )
+                    encoder.drawPrimitives(type: .triangle,
+                                           vertexStart: 0,
+                                           vertexCount: eraserIndicatorCount)
+                }
+            }
+
             encoder.endEncoding()
         }
 
@@ -443,6 +494,7 @@ final class MetalStrokeRenderer {
     private func buildPredictedTail() -> Int {
         predictedTailVerts.removeAll(keepingCapacity: true)
         guard liveActive, liveSamples.count >= 2 else { return 0 }
+        guard livePredictionEnabled else { return 0 }
         let last = liveSamples[liveSamples.count - 1]
         let prev = liveSamples[liveSamples.count - 2]
         let delta = last.position - prev.position
@@ -497,6 +549,32 @@ final class MetalStrokeRenderer {
             cursorVerts.append(ii1)
         }
         return cursorVerts.count
+    }
+
+    private func buildEraserIndicatorRing() -> Int {
+        eraserIndicatorVerts.removeAll(keepingCapacity: true)
+        guard let center = eraserIndicatorCenter else { return 0 }
+        let outerRadius = max(eraserIndicatorRadius, 2)
+        let thickness = max(1.5, min(4.0, outerRadius * 0.12))
+        let innerRadius = max(outerRadius - thickness, 0.5)
+        let count = Self.eraserIndicatorSegments
+        let twoPi: Float = .pi * 2
+        eraserIndicatorVerts.reserveCapacity(count * 6)
+        for i in 0..<count {
+            let a0 = twoPi * Float(i) / Float(count)
+            let a1 = twoPi * Float(i + 1) / Float(count)
+            let outer0 = center + SIMD2<Float>(cos(a0), sin(a0)) * outerRadius
+            let outer1 = center + SIMD2<Float>(cos(a1), sin(a1)) * outerRadius
+            let inner0 = center + SIMD2<Float>(cos(a0), sin(a0)) * innerRadius
+            let inner1 = center + SIMD2<Float>(cos(a1), sin(a1)) * innerRadius
+            eraserIndicatorVerts.append(outer0)
+            eraserIndicatorVerts.append(inner0)
+            eraserIndicatorVerts.append(outer1)
+            eraserIndicatorVerts.append(outer1)
+            eraserIndicatorVerts.append(inner0)
+            eraserIndicatorVerts.append(inner1)
+        }
+        return eraserIndicatorVerts.count
     }
 
     // MARK: - Geometry helpers
@@ -642,6 +720,16 @@ final class MetalStrokeRenderer {
         desc.usage = .renderTarget
         multisampleTexture = device.makeTexture(descriptor: desc)
     }
+
+#if DEBUG
+    func predictedTailVertexCountForTesting() -> Int {
+        buildPredictedTail()
+    }
+
+    func eraserIndicatorVertexCountForTesting() -> Int {
+        buildEraserIndicatorRing()
+    }
+#endif
 }
 
 private struct StrokeUniforms {

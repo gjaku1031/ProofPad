@@ -56,6 +56,7 @@ final class PenTool: Tool {
             straightLineHoldTimer?.invalidate()
             straightLineHoldTimer = nil
             stroke.replacePoints(linePoints)
+            canvas.setLivePredictionEnabled(false)
             canvas.replaceInProgressStroke(stroke)
             return
         }
@@ -78,6 +79,7 @@ final class PenTool: Tool {
                                    pressure: pressure)
         if let linePoints = straightLine.finish(rawPoint) {
             stroke.replacePoints(linePoints)
+            canvas.setLivePredictionEnabled(false)
             canvas.replaceInProgressStroke(stroke)
         } else {
             let newPoints = builder.finish(at: pagePoint,
@@ -128,6 +130,7 @@ final class PenTool: Tool {
               let linePoints = straightLine.snapAfterHoldIfReady(now: elapsedNowMilliseconds()) else { return }
         straightLineHoldTimer = nil
         stroke.replacePoints(linePoints)
+        canvas.setLivePredictionEnabled(false)
         canvas.replaceInProgressStroke(stroke)
     }
 

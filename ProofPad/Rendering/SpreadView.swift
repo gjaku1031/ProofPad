@@ -112,6 +112,16 @@ final class SpreadView: NSView {
         }?.pageIndex
     }
 
+    func pageFrame(forPageIndex pageIndex: Int) -> NSRect? {
+        if let leftPageView, leftPageView.pageIndex == pageIndex {
+            return leftPageView.frame
+        }
+        if let rightPageView, rightPageView.pageIndex == pageIndex {
+            return rightPageView.frame
+        }
+        return nil
+    }
+
     override func layout() {
         super.layout()
         if pagesAcross <= 1 {

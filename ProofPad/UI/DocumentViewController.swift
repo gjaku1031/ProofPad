@@ -119,14 +119,14 @@ final class DocumentViewController: NSViewController, SidebarViewControllerDeleg
             doc?.updateChangeCount(.changeDone)
         }
         let pagesPerSpread = doc.effectivePagesPerSpread
-        stripView.pagesPerSpread = pagesPerSpread
         stripView.setSpreads(
             Spread.pair(pdf,
                         coverIsSinglePage: doc.coverIsSinglePage,
                         pagesPerSpread: pagesPerSpread),
             document: doc,
             toolController: toolController,
-            onChange: onChange
+            onChange: onChange,
+            pagesPerSpread: pagesPerSpread
         )
         sidebar?.reloadThumbnails()
     }
