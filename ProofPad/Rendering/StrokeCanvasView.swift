@@ -487,7 +487,7 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
 
     func replaceInProgressStroke(_ stroke: Stroke) {
         inProgressStroke = stroke
-        redrawLiveStrokeFromModel()
+        redrawLiveStrokeFromModel(preservingLivePrediction: metalRenderer?.isLivePredictionEnabled ?? true)
         presentNow()
     }
 
@@ -534,10 +534,12 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
 
     /// inProgressStroke의 모든 점을 view 좌표로 다시 변환해 Metal renderer에 채우고 redraw.
     /// bounds/scale 변경 시 사용.
-    private func redrawLiveStrokeFromModel() {
+    private func redrawLiveStrokeFromModel(preservingLivePrediction livePredictionEnabled: Bool? = nil) {
         guard let s = inProgressStroke, let renderer = metalRenderer else { return }
+        let shouldPredict = livePredictionEnabled ?? renderer.isLivePredictionEnabled
         let scale = window?.backingScaleFactor ?? 2.0
         renderer.beginLiveStroke(color: s.color, scale: scale)
+        renderer.setLivePredictionEnabled(shouldPredict)
         for sample in renderSamples(for: s) {
             renderer.appendLiveSample(sample)
         }
@@ -654,5 +656,11 @@ final class StrokeCanvasView: NSView, DisplayLinkSubscriber {
     func endEraseUndoGroup() {
         window?.undoManager?.endUndoGrouping()
     }
+
+#if DEBUG
+    func livePredictedTailVertexCountForTesting() -> Int {
+        metalRenderer?.predictedTailVertexCountForTesting() ?? 0
+    }
+#endif
 
 }

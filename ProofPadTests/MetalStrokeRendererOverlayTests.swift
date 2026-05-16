@@ -17,6 +17,27 @@ final class MetalStrokeRendererOverlayTests: XCTestCase {
         XCTAssertEqual(renderer.predictedTailVertexCountForTesting(), 0)
     }
 
+    func testReplacingSnappedCanvasStrokeKeepsPredictionDisabledForPreview() throws {
+        let canvas = StrokeCanvasView(pageBounds: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                      pageStrokes: PageStrokes(pageIndex: 0),
+                                      toolController: ToolController())
+        canvas.frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+
+        let stroke = Stroke(color: .black, width: 4)
+        stroke.replacePoints([
+            StrokePoint(x: 20, y: 20, t: 0, pressure: 0.5),
+            StrokePoint(x: 120, y: 20, t: 100, pressure: 0.5),
+        ])
+
+        canvas.beginInProgressStroke(stroke)
+        XCTAssertGreaterThan(canvas.livePredictedTailVertexCountForTesting(), 0)
+
+        canvas.setLivePredictionEnabled(false)
+        canvas.replaceInProgressStroke(stroke)
+
+        XCTAssertEqual(canvas.livePredictedTailVertexCountForTesting(), 0)
+    }
+
     func testEraserIndicatorProducesAndClearsRingGeometry() throws {
         let renderer = try XCTUnwrap(MetalStrokeRenderer())
 

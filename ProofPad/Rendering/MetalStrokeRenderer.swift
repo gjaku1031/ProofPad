@@ -122,6 +122,7 @@ final class MetalStrokeRenderer {
     private var predictedTailVerts: [SIMD2<Float>] = []
     private var livePredictionStrength: Float = 1.0
     private var livePredictionEnabled = true
+    var isLivePredictionEnabled: Bool { livePredictionEnabled }
 
     // MARK: - Synthetic cursor
     //
